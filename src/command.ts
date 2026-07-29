@@ -94,17 +94,18 @@ export async function runWorktreeCommand(
 			...local.map(b => ({ label: b, description: b === cur ? "current" : "local" })),
 			...remote.map(r => ({ label: r, description: "remote" })),
 		];
-		const choice = await deps.ui.select("Worktree from branch", options);
-		if (!choice) return;
-
-		// Two-step: after picking a branch, offer checkout or new-branch-from-here.
-		const isNew = await deps.ui.confirm(
-			`New branch from ${choice}?`,
-			`Enter = new branch from ${choice}  ·  Esc/n = checkout ${choice} as-is`,
-		);
-		if (isNew) {
-			const name = await deps.ui.input(`New branch name (from ${choice})`);
-			if (!name) return;
+		// Loop: pick a branch → input. Esc on input goes back to the picker.
+		// Empty input = checkout the picked branch as-is.
+		// Non-empty input = new branch named after the input, based off the pick.
+		let choice: string | undefined;
+		let name: string | undefined;
+		for (;;) {
+			choice = await deps.ui.select("Worktree from branch", options);
+			if (!choice) return;
+			name = await deps.ui.input(`Branch name (empty = checkout ${choice}, esc = back)`);
+			if (name !== undefined) break;
+		}
+		if (name) {
 			mode = { kind: "new", name, baseRef: choice };
 			branch = name;
 		} else if (local.includes(choice)) {
