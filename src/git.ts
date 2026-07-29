@@ -126,14 +126,17 @@ export async function removeWorktree(
 	if (r.code !== 0) throw new Error(r.stderr.trim() || "git worktree remove failed");
 }
 
-/** Markdown lines `- <branch|detached> → <path>`, marking the Main worktree. */
-export function formatWorktreeList(wts: WorktreeInfo[]): string {
+/** Markdown lines `<icon> <branch|detached> → <path>`, marking the Main worktree. */
+export function formatWorktreeList(wts: WorktreeInfo[], symbols: (key: string) => string): string {
 	if (wts.length === 0) return "_No worktrees._";
+	const mainIcon = symbols("icon.folder");
+	const wtIcon = symbols("icon.worktree");
 	return wts
 		.map((w, i) => {
 			const label = w.detached ? "detached" : w.branch ? shortRef(w.branch) : path.basename(w.path);
+			const icon = i === 0 ? mainIcon : wtIcon;
 			const tag = i === 0 ? " (main)" : "";
-			return `- ${label}${tag} → ${w.path}`;
+			return `${icon} ${label}${tag} → ${w.path}`;
 		})
 		.join("\n");
 }

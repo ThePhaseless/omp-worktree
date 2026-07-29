@@ -5,6 +5,13 @@ import * as os from "node:os";
 import type { GitExec, WorktreeInfo } from "../src/git";
 import { runWorktreeCommand, type WorktreeDeps, type WorktreeUI } from "../src/command";
 
+const UNICODE_SYMBOLS: Record<string, string> = {
+	"status.warning": "⚠",
+	"icon.branch": "⑂",
+	"icon.folder": "📁",
+	"icon.worktree": "🌳",
+};
+
 interface RunOpts {
 	current?: string;
 	local?: string[];
@@ -94,6 +101,7 @@ function makeDeps(opts: RunOpts, ui: WorktreeUI, existsPaths: Set<string>) {
 		stdin: null,
 		processArgv: ["/bun", "/path/to/dist/cli.js"],
 		existsSync: (p) => existsPaths.has(p),
+		symbols: (key) => UNICODE_SYMBOLS[key] ?? "",
 	};
 	return { deps, calls, getExecved: () => execved, getExited: () => exited, displayMsgs };
 }

@@ -38,11 +38,11 @@ export interface WorktreeDeps {
 	stdin: { isTTY?: boolean; setRawMode?(mode: boolean): void } | null;
 	processArgv: string[];
 	existsSync: (p: string) => boolean;
+	/** Glyph resolver keyed by omp's SymbolKey (theme-aware: unicode/nerd/ascii). */
+	symbols: (key: string) => string;
 }
 
 type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string };
-
-const NEW_BRANCH_LABEL = "➕ New branch…";
 
 /**
  * Orchestrates the `/worktree` command. Fully injectable for testing; only the
@@ -58,7 +58,7 @@ export async function runWorktreeCommand(
 	const cwd = ctx.cwd;
 
 	if (action.kind === "list") {
-		deps.display(formatWorktreeList(await listWorktrees(cwd, deps.run)));
+		deps.display(formatWorktreeList(await listWorktrees(cwd, deps.run), deps.symbols));
 		return;
 	}
 
@@ -67,7 +67,7 @@ export async function runWorktreeCommand(
 		try {
 			await removeWorktree(cwd, deps.run, action.target, action.force);
 		} catch (e) {
-			deps.display(`⚠️ ${(e as Error).message}`);
+			deps.display(`${deps.symbols("status.warning")} ${(e as Error).message}`);
 			return;
 		}
 		deps.ui.notify(`Removed ${action.target}`, "info");
@@ -79,7 +79,7 @@ export async function runWorktreeCommand(
 	try {
 		mainRoot = await resolveMainRepoRoot(cwd, deps.run);
 	} catch (e) {
-		deps.display(`⚠️ ${(e as Error).message}`);
+		deps.display(`${deps.symbols("status.warning")} ${(e as Error).message}`);
 		return;
 	}
 
@@ -87,19 +87,19 @@ export async function runWorktreeCommand(
 	let branch: string;
 	let mode: Mode;
 	let at0: string;
-
 	if (action.kind === "interactive") {
 		const cur = await currentBranch(mainRoot, deps.run);
 		const { local, remote } = await listBranches(mainRoot, deps.run);
+		const newLabel = `${deps.symbols("icon.branch")} New branch…`;
 		const options: Array<string | { label: string; description?: string }> = [
 			...local.map(b => ({ label: b, description: b === cur ? "current" : "local" })),
 			...remote.map(r => ({ label: r, description: "remote" })),
-			{ label: NEW_BRANCH_LABEL },
+			{ label: newLabel },
 		];
 		const choice = await deps.ui.select("Worktree from branch", options);
 		if (!choice) return;
 
-		if (choice === NEW_BRANCH_LABEL) {
+		if (choice === newLabel) {
 			const name = await deps.ui.input("New branch name");
 			if (!name) return;
 			const baseLabel = await deps.ui.select(
@@ -148,7 +148,7 @@ export async function runWorktreeCommand(
 	const existing = wts.find(w => w.branch && shortRef(w.branch) === branch);
 	if (existing) {
 		if (path.resolve(existing.path) === path.resolve(cwd)) {
-			deps.display(`⚠️ Already in ${existing.path} — ${branch} is checked out here. Pick a different branch or use /worktree --new.`);
+			deps.display(`${deps.symbols("status.warning")} Already in ${existing.path} — ${branch} is checked out here. Pick a different branch or use /worktree --new.`);
 			return;
 		}
 		if (await deps.ui.confirm("Worktree exists", `Switch into existing worktree at ${existing.path}?`)) {
@@ -164,7 +164,7 @@ export async function runWorktreeCommand(
 		const alt = await deps.ui.input("Path exists. Alternative path?", `${at}-2`);
 		if (!alt) return;
 		if (deps.existsSync(alt)) {
-			deps.display(`⚠️ ${alt} also exists`);
+			deps.display(`${deps.symbols("status.warning")} ${alt} also exists`);
 			return;
 		}
 		at = alt;
@@ -176,7 +176,7 @@ export async function runWorktreeCommand(
 			await addWorktree(mainRoot, deps.run, { path: at, branch: mode.branch });
 		}
 	} catch (e) {
-		deps.display(`⚠️ ${(e as Error).message}`);
+		deps.display(`${deps.symbols("status.warning")} ${(e as Error).message}`);
 		return;
 	}
 	relaunchInto(at);

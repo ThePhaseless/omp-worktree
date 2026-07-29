@@ -29,6 +29,7 @@ export default function worktreeExtension(pi: ExtensionAPI): void {
 					stdin: process.stdin as typeof process.stdin | null,
 					processArgv: process.argv,
 					existsSync: fs.existsSync,
+					symbols: (key) => ctx.ui.theme?.symbol(key as never) ?? "",
 				},
 			);
 		},

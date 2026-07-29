@@ -131,7 +131,7 @@ describe("git integration", () => {
 		const wt = path.join(path.dirname(tmp), path.basename(tmp) + "-wt-fmt");
 		await addWorktree(tmp, run, { path: wt, branch: "feature" });
 		const wts = await listWorktrees(tmp, run);
-		const out = formatWorktreeList(wts);
+		const out = formatWorktreeList(wts, () => "");
 		expect(out).toContain("(main)");
 		expect(out).toContain("feature");
 		expect(out).toContain(wt);
