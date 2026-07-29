@@ -122,8 +122,8 @@ function addCall(calls: { args: string[] }[]) {
 const SESSION_FILE = "/sess/main.jsonl";
 
 describe("runWorktreeCommand — create/switch", () => {
-	test("interactive pick non-current branch → checkout + relaunch with --fork", async () => {
-		const { ui } = makeUi({ selects: ["feature"] });
+	test("interactive pick non-current branch → checkout (decline new branch)", async () => {
+		const { ui } = makeUi({ selects: ["feature"], confirms: [false] });
 		const { deps, calls, getExecved } = makeDeps(
 			{ current: "main", local: ["main", "feature"], worktrees: [{ path: "/repo", branch: "refs/heads/main" }] },
 			ui,
@@ -142,8 +142,29 @@ describe("runWorktreeCommand — create/switch", () => {
 		]);
 	});
 
+	test("interactive pick branch → new branch from highlighted", async () => {
+		const { ui } = makeUi({ selects: ["feature"], confirms: [true], inputs: ["feature-wt"] });
+		const { deps, calls, getExecved } = makeDeps(
+			{ current: "main", local: ["main", "feature"], worktrees: [{ path: "/repo", branch: "refs/heads/main" }] },
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
+		expect(addCall(calls)?.args).toEqual([
+			"worktree",
+			"add",
+			"-b",
+			"feature-wt",
+			sibling("feature-wt"),
+			"feature",
+		]);
+		expect(getExecved()).not.toBeNull();
+	});
+
 	test("interactive pick current branch → switch to existing worktree", async () => {
-		const { ui } = makeUi({ selects: ["feature"], confirms: [true] });
+		// confirm[0]=false (decline new branch) → checkout → existing-worktree fast path
+		// confirm[1]=true (switch into existing)
+		const { ui } = makeUi({ selects: ["feature"], confirms: [false, true] });
 		const { deps, calls, getExecved } = makeDeps(
 			{
 				current: "feature",
@@ -157,13 +178,14 @@ describe("runWorktreeCommand — create/switch", () => {
 			new Set([SESSION_FILE, sibling("feature")]),
 		);
 		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
-		// No new worktree created — switched to existing.
 		expect(addCall(calls)).toBeUndefined();
 		expect(getExecved()?.argv).toContain("--cwd");
 	});
 
 	test("interactive pick current branch already in cwd → warn, no execve", async () => {
-		const { ui } = makeUi({ selects: ["feature"] });
+		// confirm[0]=false (decline new branch) → checkout → existing-worktree fast path
+		// finds cwd → warn
+		const { ui } = makeUi({ selects: ["feature"], confirms: [false] });
 		const { deps, calls, getExecved, displayMsgs } = makeDeps(
 			{
 				current: "feature",
@@ -174,14 +196,14 @@ describe("runWorktreeCommand — create/switch", () => {
 			new Set([SESSION_FILE]),
 		);
 		await runWorktreeCommand("", makeCtx(SESSION_FILE), { ...deps, existsSync: () => true });
-		// cwd is /repo, existing worktree is /repo → warn, no worktree add, no execve
 		expect(addCall(calls)).toBeUndefined();
 		expect(getExecved()).toBeNull();
 		expect(displayMsgs.some(m => m.includes("Already in"))).toBe(true);
 	});
 
 	test("interactive pick remote → auto-defaulted tracking branch", async () => {
-		const { ui } = makeUi({ selects: ["origin/x"] });
+		// confirm[0]=false (decline new branch) → remote → auto tracking branch
+		const { ui } = makeUi({ selects: ["origin/x"], confirms: [false] });
 		const { deps, calls } = makeDeps(
 			{ current: "main", local: ["main"], remote: ["origin/x"], worktrees: [{ path: "/repo", branch: "refs/heads/main" }] },
 			ui,

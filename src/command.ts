@@ -90,24 +90,22 @@ export async function runWorktreeCommand(
 	if (action.kind === "interactive") {
 		const cur = await currentBranch(mainRoot, deps.run);
 		const { local, remote } = await listBranches(mainRoot, deps.run);
-		const newLabel = `${deps.symbols("icon.branch")} New branch…`;
 		const options: Array<string | { label: string; description?: string }> = [
 			...local.map(b => ({ label: b, description: b === cur ? "current" : "local" })),
 			...remote.map(r => ({ label: r, description: "remote" })),
-			{ label: newLabel },
 		];
 		const choice = await deps.ui.select("Worktree from branch", options);
 		if (!choice) return;
 
-		if (choice === newLabel) {
-			const name = await deps.ui.input("New branch name");
+		// Two-step: after picking a branch, offer checkout or new-branch-from-here.
+		const isNew = await deps.ui.confirm(
+			`New branch from ${choice}?`,
+			`Enter = new branch from ${choice}  ·  Esc/n = checkout ${choice} as-is`,
+		);
+		if (isNew) {
+			const name = await deps.ui.input(`New branch name (from ${choice})`);
 			if (!name) return;
-			const baseLabel = await deps.ui.select(
-				"Base branch",
-				[...local, ...remote, "(current HEAD)"].map(x => ({ label: x })),
-			);
-			if (!baseLabel) return;
-			mode = { kind: "new", name, baseRef: baseLabel === "(current HEAD)" ? undefined : baseLabel };
+			mode = { kind: "new", name, baseRef: choice };
 			branch = name;
 		} else if (local.includes(choice)) {
 			mode = { kind: "checkout", branch: choice };
