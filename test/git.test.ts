@@ -105,25 +105,6 @@ describe("git integration", () => {
 		expect(wts.some(w => path.resolve(w.path) === path.resolve(wt))).toBe(true);
 	});
 
-	test("addWorktree detached at HEAD needs no branch name", async () => {
-		const wt = path.join(path.dirname(tmp), path.basename(tmp) + "-wt-detach");
-		await addWorktree(tmp, run, { path: wt, detach: true });
-		expect(fs.existsSync(wt)).toBe(true);
-		const head = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], wt);
-		expect(head.stdout.trim()).toBe("HEAD"); // detached
-	});
-
-	test("addWorktree detached at a ref checks out that commit", async () => {
-		const wt = path.join(path.dirname(tmp), path.basename(tmp) + "-wt-detachref");
-		await addWorktree(tmp, run, { path: wt, detach: true, ref: "feature" });
-		expect(fs.existsSync(wt)).toBe(true);
-		const head = await run("git", ["rev-parse", "--abbrev-ref", "HEAD"], wt);
-		expect(head.stdout.trim()).toBe("HEAD"); // detached
-		const featureSha = (await run("git", ["rev-parse", "feature"], tmp)).stdout.trim();
-		const wtSha = (await run("git", ["rev-parse", "HEAD"], wt)).stdout.trim();
-		expect(wtSha).toBe(featureSha);
-	});
-
 	test("statusPorcelain empty clean / non-empty dirty", async () => {
 		expect((await statusPorcelain(tmp, run)).trim()).toBe("");
 		await fs.promises.writeFile(path.join(tmp, "dirty"), "x");

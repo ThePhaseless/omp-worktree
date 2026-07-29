@@ -40,7 +40,7 @@ export interface WorktreeDeps {
 	existsSync: (p: string) => boolean;
 }
 
-type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string } | { kind: "detach"; ref?: string };
+type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string };
 
 const NEW_BRANCH_LABEL = "➕ New branch…";
 
@@ -92,7 +92,7 @@ export async function runWorktreeCommand(
 		const cur = await currentBranch(mainRoot, deps.run);
 		const { local, remote } = await listBranches(mainRoot, deps.run);
 		const options: Array<string | { label: string; description?: string }> = [
-			...local.map(b => ({ label: b, description: b === cur ? "current (detached at HEAD)" : "local" })),
+			...local.map(b => ({ label: b, description: b === cur ? "current" : "local" })),
 			...remote.map(r => ({ label: r, description: "remote" })),
 			{ label: NEW_BRANCH_LABEL },
 		];
@@ -110,32 +110,17 @@ export async function runWorktreeCommand(
 			mode = { kind: "new", name, baseRef: baseLabel === "(current HEAD)" ? undefined : baseLabel };
 			branch = name;
 		} else if (local.includes(choice)) {
-			if (choice === cur) {
-				// Current branch is already checked out — detach at HEAD so no new
-				// branch name is needed and the existing branch isn't checked out twice.
-				mode = { kind: "detach" };
-				branch = choice;
-			} else {
-				mode = { kind: "checkout", branch: choice };
-				branch = choice;
-			}
+			mode = { kind: "checkout", branch: choice };
+			branch = choice;
 		} else {
-			// Remote → detached worktree at the remote ref (no new branch name, no
-			// detached-HEAD surprise from a bare `worktree add <remote>`).
-			mode = { kind: "detach", ref: choice };
-			branch = localNameForRemote(choice);
+			// Remote → local tracking branch (auto-defaulted name, no prompt).
+			mode = { kind: "new", name: localNameForRemote(choice), baseRef: choice };
+			branch = mode.name;
 		}
 		at0 = computeDefaultWorktreePath(mainRoot, branch);
 	} else if (action.kind === "checkout") {
-		const cur = await currentBranch(mainRoot, deps.run);
-		if (action.branch === cur) {
-			// Current branch is already checked out — detach at HEAD, no new name.
-			mode = { kind: "detach" };
-			branch = action.branch;
-		} else {
-			mode = { kind: "checkout", branch: action.branch };
-			branch = action.branch;
-		}
+		mode = { kind: "checkout", branch: action.branch };
+		branch = action.branch;
 		at0 = action.at ?? computeDefaultWorktreePath(mainRoot, branch);
 	} else {
 		// action.kind === "new"
@@ -157,13 +142,19 @@ export async function runWorktreeCommand(
 			return;
 	}
 
-	// Existing-worktree fast path.
+	// Existing-worktree fast path: if the branch is already checked out in a
+	// worktree, switch into it. If that worktree is the current cwd, warn instead.
 	const wts = await listWorktrees(mainRoot, deps.run);
-	const existing = wts.find(
-		w => path.resolve(w.path) === path.resolve(at0) || (w.branch && shortRef(w.branch) === branch),
-	);
-	if (existing && (await deps.ui.confirm("Worktree exists", `Switch into existing worktree at ${existing.path}?`))) {
-		relaunchInto(existing.path);
+	const existing = wts.find(w => w.branch && shortRef(w.branch) === branch);
+	if (existing) {
+		if (path.resolve(existing.path) === path.resolve(cwd)) {
+			deps.display(`⚠️ Already in ${existing.path} — ${branch} is checked out here. Pick a different branch or use /worktree --new.`);
+			return;
+		}
+		if (await deps.ui.confirm("Worktree exists", `Switch into existing worktree at ${existing.path}?`)) {
+			relaunchInto(existing.path);
+			return;
+		}
 		return;
 	}
 
@@ -179,11 +170,8 @@ export async function runWorktreeCommand(
 		at = alt;
 	}
 	try {
-	// Create.
 		if (mode.kind === "new") {
 			await addWorktree(mainRoot, deps.run, { path: at, newBranch: mode.name, baseRef: mode.baseRef });
-		} else if (mode.kind === "detach") {
-			await addWorktree(mainRoot, deps.run, { path: at, detach: true, ref: mode.ref });
 		} else {
 			await addWorktree(mainRoot, deps.run, { path: at, branch: mode.branch });
 		}

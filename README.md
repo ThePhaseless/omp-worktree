@@ -20,12 +20,14 @@ any open omp after installing.
 
 - `/worktree` — interactive branch picker. Pick a local/remote branch or create a
   new one; omp relaunches inside the new worktree, continuing the conversation.
-  - Picking an **existing non-current** local branch checks it out.
-  - Picking the **current** branch or a **remote** branch creates a detached-HEAD
-    worktree at that commit (no new branch name is asked for).
+  - Picking an **existing non-current** local branch checks it out in a new worktree.
+  - Picking the **current** branch switches into the worktree where it's already
+    checked out (warns if you're already there).
+  - Picking a **remote** branch creates a local tracking branch with an
+    auto-defaulted name (`origin/x` → `x`).
   - "➕ New branch…" prompts for a name and optional base, then creates that branch.
 - `/worktree <branch>` — create a worktree for an existing branch. If `<branch>`
-  is the current branch, detaches at HEAD.
+  is already checked out in a worktree, switches into it instead.
 - `/worktree --new <name> [<base>]` — create a new branch `<name>` (optionally
   based off `<base>`, default current HEAD) and a worktree for it. `-n` is an
   alias for `--new`.

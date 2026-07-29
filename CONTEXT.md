@@ -64,11 +64,11 @@ Canonical vocabulary for the omp git-worktree plugin. Terms only; no implementat
   is the worktree session — and moves into the worktree. This is native omp
   behavior and not mitigable from a plugin. Documented in ADR-0001.
 
-- **D3 — Current-branch pick detaches at HEAD.** A branch is single-checkout,
-  so picking the currently-checked-out branch cannot check it out again. Rather
-  than force a new-branch name, the plugin creates a **detached-HEAD** worktree
-  at the current commit (`git worktree add --detach <path>`). No name needed; the
-  existing branch is left untouched.
+- **D3 — Current-branch pick switches to the existing worktree.** A branch is
+  single-checkout, so picking the currently-checked-out branch cannot create a
+  second worktree for it. The plugin finds the worktree where that branch is
+  already checked out and switches into it. If that worktree is the current cwd,
+  it warns and returns. No new branch name is asked for.
 
 - **D4 — Nested worktrees allowed.** Resolution via `git rev-parse
   --git-common-dir` makes the new worktree a sibling of the Main repo and keeps
@@ -86,10 +86,9 @@ Canonical vocabulary for the omp git-worktree plugin. Terms only; no implementat
 - **D7 — Dirty repo warns + confirms (proceed default).** Uncommitted/untracked
   files in the Main repo won't exist in the new worktree; the user is told the
   count and asked to confirm.
-- **D8 — Remote branches detaches at the ref.** Picking a remote ref creates a
-  detached-HEAD worktree at that commit (`git worktree add --detach <path>
-  <remote-ref>`). No new branch name is required and no local branch is created;
-  the worktree's default path is named after the remote ref (`origin/x` → `x`).
+- **D8 — Remote branches auto-create a local tracking branch.** Picking a
+  remote ref creates a local tracking branch with a defaulted name (`origin/x`
+  → `x`), no prompt. Commits land on a real branch.
 
 - **D9 — Path-collision preflight.** If the planned worktree path already exists
   and is not already a worktree, prompt for an alternative (default `<path>-2`).
