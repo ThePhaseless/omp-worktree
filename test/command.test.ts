@@ -134,34 +134,27 @@ describe("runWorktreeCommand — create/switch", () => {
 		]);
 	});
 
-	test("interactive pick current branch → redirect to new-branch flow (D3)", async () => {
-		const { ui } = makeUi({ selects: ["feature"], inputs: ["feature-wt"] });
+	test("interactive pick current branch → detached worktree at HEAD", async () => {
+		const { ui } = makeUi({ selects: ["feature"] });
 		const { deps, calls, getExecved } = makeDeps(
 			{ current: "feature", local: ["feature"], worktrees: [{ path: "/repo", branch: "refs/heads/feature" }] },
 			ui,
 			new Set([SESSION_FILE]),
 		);
 		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
-		expect(addCall(calls)?.args).toEqual([
-			"worktree",
-			"add",
-			"-b",
-			"feature-wt",
-			sibling("feature-wt"),
-			"feature",
-		]);
+		expect(addCall(calls)?.args).toEqual(["worktree", "add", "--detach", sibling("feature")]);
 		expect(getExecved()).not.toBeNull();
 	});
 
-	test("interactive pick remote → local tracking branch (D8)", async () => {
-		const { ui } = makeUi({ selects: ["origin/x"], inputs: ["x"] });
+	test("interactive pick remote → detached worktree at remote ref", async () => {
+		const { ui } = makeUi({ selects: ["origin/x"] });
 		const { deps, calls } = makeDeps(
 			{ current: "main", local: ["main"], remote: ["origin/x"], worktrees: [{ path: "/repo", branch: "refs/heads/main" }] },
 			ui,
 			new Set([SESSION_FILE]),
 		);
 		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
-		expect(addCall(calls)?.args).toEqual(["worktree", "add", "-b", "x", sibling("x"), "origin/x"]);
+		expect(addCall(calls)?.args).toEqual(["worktree", "add", "--detach", sibling("x"), "origin/x"]);
 	});
 
 	test("--new feat2 main → create branch + worktree + relaunch with --fork", async () => {

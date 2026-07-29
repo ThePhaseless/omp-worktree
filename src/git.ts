@@ -82,11 +82,16 @@ export interface AddWorktreeOpts {
 	branch?: string;
 	newBranch?: string;
 	baseRef?: string;
+	/** Create a detached-HEAD worktree at `ref` (or HEAD when omitted). */
+	detach?: boolean;
+	ref?: string;
 }
 
 /**
- * Create a worktree. For a new/tracking branch: `worktree add -b <newBranch>
- * <path> [<baseRef>]`. For an existing branch: `worktree add <path> <branch>`.
+ * Create a worktree. Modes:
+ * - new/tracking branch: `worktree add -b <newBranch> <path> [<baseRef>]`
+ * - existing branch: `worktree add <path> <branch>`
+ * - detached HEAD: `worktree add --detach <path> [<ref>]`
  * Throws on non-zero exit.
  */
 export async function addWorktree(cwd: string, run: GitExec, opts: AddWorktreeOpts): Promise<void> {
@@ -96,8 +101,11 @@ export async function addWorktree(cwd: string, run: GitExec, opts: AddWorktreeOp
 		if (opts.baseRef) args.push(opts.baseRef);
 	} else if (opts.branch) {
 		args = ["worktree", "add", opts.path, opts.branch];
+	} else if (opts.detach) {
+		args = ["worktree", "add", "--detach", opts.path];
+		if (opts.ref) args.push(opts.ref);
 	} else {
-		throw new Error("addWorktree requires a branch or newBranch");
+		throw new Error("addWorktree requires a branch, newBranch, or detach");
 	}
 	const r = await run("git", args, cwd);
 	if (r.code !== 0) throw new Error(r.stderr.trim() || "git worktree add failed");

@@ -40,7 +40,7 @@ export interface WorktreeDeps {
 	existsSync: (p: string) => boolean;
 }
 
-type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string };
+type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string } | { kind: "detach"; ref?: string };
 
 const NEW_BRANCH_LABEL = "➕ New branch…";
 
@@ -92,7 +92,7 @@ export async function runWorktreeCommand(
 		const cur = await currentBranch(mainRoot, deps.run);
 		const { local, remote } = await listBranches(mainRoot, deps.run);
 		const options: Array<string | { label: string; description?: string }> = [
-			...local.map(b => ({ label: b, description: b === cur ? "current (will branch off)" : "local" })),
+			...local.map(b => ({ label: b, description: b === cur ? "current (detached at HEAD)" : "local" })),
 			...remote.map(r => ({ label: r, description: "remote" })),
 			{ label: NEW_BRANCH_LABEL },
 		];
@@ -111,31 +111,27 @@ export async function runWorktreeCommand(
 			branch = name;
 		} else if (local.includes(choice)) {
 			if (choice === cur) {
-				// Current branch is single-checkout → redirect to new-branch flow (D3).
-				const name = await deps.ui.input("New branch name (from current)", `${choice}-wt`);
-				if (!name) return;
-				mode = { kind: "new", name, baseRef: choice };
-				branch = name;
+				// Current branch is already checked out — detach at HEAD so no new
+				// branch name is needed and the existing branch isn't checked out twice.
+				mode = { kind: "detach" };
+				branch = choice;
 			} else {
 				mode = { kind: "checkout", branch: choice };
 				branch = choice;
 			}
 		} else {
-			// Remote → local tracking branch, no detached HEAD (D8).
-			const name = await deps.ui.input(`Local branch name for ${choice}`, localNameForRemote(choice));
-			if (!name) return;
-			mode = { kind: "new", name, baseRef: choice };
-			branch = name;
+			// Remote → detached worktree at the remote ref (no new branch name, no
+			// detached-HEAD surprise from a bare `worktree add <remote>`).
+			mode = { kind: "detach", ref: choice };
+			branch = localNameForRemote(choice);
 		}
 		at0 = computeDefaultWorktreePath(mainRoot, branch);
 	} else if (action.kind === "checkout") {
 		const cur = await currentBranch(mainRoot, deps.run);
 		if (action.branch === cur) {
-			// Current-branch redirect (D3).
-			const name = await deps.ui.input("New branch name", `${action.branch}-wt`);
-			if (!name) return;
-			mode = { kind: "new", name, baseRef: action.branch };
-			branch = name;
+			// Current branch is already checked out — detach at HEAD, no new name.
+			mode = { kind: "detach" };
+			branch = action.branch;
 		} else {
 			mode = { kind: "checkout", branch: action.branch };
 			branch = action.branch;
@@ -182,11 +178,12 @@ export async function runWorktreeCommand(
 		}
 		at = alt;
 	}
-
-	// Create.
 	try {
+	// Create.
 		if (mode.kind === "new") {
 			await addWorktree(mainRoot, deps.run, { path: at, newBranch: mode.name, baseRef: mode.baseRef });
+		} else if (mode.kind === "detach") {
+			await addWorktree(mainRoot, deps.run, { path: at, detach: true, ref: mode.ref });
 		} else {
 			await addWorktree(mainRoot, deps.run, { path: at, branch: mode.branch });
 		}
