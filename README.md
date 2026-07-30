@@ -13,30 +13,49 @@ repo's session bucket, so it appears in the session list of both folders.
 omp plugin install github:ThePhaseless/omp-worktree
 ```
 
-User scope — loads in the main repo and after moving into a worktree. Restart
-any open omp after installing.
+Restart any open omp after installing.
 
 ## Usage
 
-- `/worktree` — interactive branch picker. Pick a local/remote branch or create a
-  new one; omp relaunches inside the new worktree, continuing the conversation.
-  - Picking an **existing non-current** local branch checks it out in a new worktree.
-  - Picking the **current** branch switches into the worktree where it's already
-    checked out (warns if you're already there).
-  - Picking a **remote** branch creates a local tracking branch with an
-    auto-defaulted name (`origin/x` → `x`).
-  - "➕ New branch…" prompts for a name and optional base, then creates that branch.
-- `/worktree <branch>` — create a worktree for an existing branch. If `<branch>`
+### Interactive
+
+```
+/worktree
+```
+
+Pick a branch from the list of local and remote branches. Then type a branch
+name:
+
+- **Empty** — check out the selected branch as-is in a new worktree.
+  - If the branch is already checked out in an existing worktree, switches into
+    it instead of creating a new one.
+  - If you're already in the worktree where it's checked out, warns and returns.
+  - Remote branches create a local tracking branch with an auto-defaulted name
+    (`origin/x` → `x`).
+- **Non-empty** — create a new branch with that name, based off the selected
+  branch, and a worktree for it.
+- **Esc** — go back to the branch picker.
+
+### Non-interactive
+
+- `/worktree <branch>` — create a worktree for an existing branch. If the branch
   is already checked out in a worktree, switches into it instead.
 - `/worktree --new <name> [<base>]` — create a new branch `<name>` (optionally
   based off `<base>`, default current HEAD) and a worktree for it. `-n` is an
   alias for `--new`.
-- `/worktree list` — list all worktrees (markdown) in chat.
-- `/worktree remove <target>` — remove a worktree (by path or branch). Prompts to
-  confirm; add `--force` to remove a worktree with untracked/modified files.
+- `/worktree list` — list all worktrees in chat.
+- `/worktree remove <target>` — remove a worktree by path or branch name. Prompts
+  to confirm; add `--force` to remove a worktree with untracked/modified files.
 
-`--at <path>` can be added to `checkout`/`new` to override the default worktree
-location (a sibling of the main repo named `<repo>-wt-<branch>`).
+`--at <path>` can be added to `<branch>` or `--new` to override the default
+worktree location (a sibling of the main repo named `<repo>-wt-<branch>`).
+
+### Checks
+
+- **Dirty repo** — if the main repo has uncommitted/untracked files, you're told
+  the count and asked to confirm (they won't exist in the new worktree).
+- **Path collision** — if the default worktree path already exists, you're
+  prompted for an alternative (default `<path>-2`).
 
 ## Shared-conversation behavior
 
@@ -54,7 +73,7 @@ See [`CONTEXT.md`](./CONTEXT.md) for the domain glossary and
 
 ## Requirements
 
-- omp with extension support
+- [omp](https://omp.sh) with extension support
 - `git` on `PATH`
 
 ## Tests
@@ -62,3 +81,7 @@ See [`CONTEXT.md`](./CONTEXT.md) for the domain glossary and
 ```
 bun test
 ```
+
+## License
+
+MIT
