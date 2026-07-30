@@ -1,4 +1,4 @@
-# Domain Glossary — omp-worktree-plugin
+# Domain Glossary — omp-worktree
 
 Canonical vocabulary for the omp git-worktree plugin. Terms only; no implementation.
 
@@ -93,5 +93,5 @@ Canonical vocabulary for the omp git-worktree plugin. Terms only; no implementat
 - **D9 — Path-collision preflight.** If the planned worktree path already exists
   and is not already a worktree, prompt for an alternative (default `<path>-2`).
 
-- **D10 — Delivered as a new public GitHub repo.** `ThePhaseless/omp-worktree-plugin`;
-  install via `omp plugin install github:ThePhaseless/omp-worktree-plugin`.
+- **D10 — Delivered as a new public GitHub repo.** `ThePhaseless/omp-worktree`;
+  install via `omp plugin install github:ThePhaseless/omp-worktree`.

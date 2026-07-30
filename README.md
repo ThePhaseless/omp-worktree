@@ -1,4 +1,4 @@
-# omp-worktree-plugin
+# omp-worktree
 
 An [omp.sh](https://omp.sh) extension that adds native `git worktree` support via
 a `/worktree` slash command. From an omp session running in a git repo, pick a
@@ -10,7 +10,7 @@ repo's session bucket, so it appears in the session list of both folders.
 ## Install
 
 ```
-omp plugin install github:ThePhaseless/omp-worktree-plugin
+omp plugin install github:ThePhaseless/omp-worktree
 ```
 
 User scope — loads in the main repo and after moving into a worktree. Restart
