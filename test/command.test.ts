@@ -101,6 +101,7 @@ function makeDeps(opts: RunOpts, ui: WorktreeUI, existsPaths: Set<string>) {
 		stdin: null,
 		processArgv: ["/bun", "/path/to/dist/cli.js"],
 		existsSync: (p) => existsPaths.has(p),
+		realpathSync: (p) => p,
 		symbols: (key) => UNICODE_SYMBOLS[key] ?? "",
 	};
 	return { deps, calls, getExecved: () => execved, getExited: () => exited, displayMsgs };

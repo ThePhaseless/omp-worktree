@@ -38,6 +38,8 @@ export interface WorktreeDeps {
 	stdin: { isTTY?: boolean; setRawMode?(mode: boolean): void } | null;
 	processArgv: string[];
 	existsSync: (p: string) => boolean;
+	/** Resolves symlinks so paths from git (which may differ from cwd via /home → /var/home) compare correctly. */
+	realpathSync: (p: string) => string;
 	/** Glyph resolver keyed by omp's SymbolKey (theme-aware: unicode/nerd/ascii). */
 	symbols: (key: string) => string;
 }
@@ -146,7 +148,7 @@ export async function runWorktreeCommand(
 	const wts = await listWorktrees(mainRoot, deps.run);
 	const existing = wts.find(w => w.branch && shortRef(w.branch) === branch);
 	if (existing) {
-		if (path.resolve(existing.path) === path.resolve(cwd)) {
+		if (deps.realpathSync(existing.path) === deps.realpathSync(cwd)) {
 			deps.display(`${deps.symbols("status.warning")} Already in ${existing.path} — ${branch} is checked out here. Pick a different branch or use /worktree --new.`);
 			return;
 		}
@@ -159,7 +161,7 @@ export async function runWorktreeCommand(
 
 	// Path-collision preflight (D9).
 	let at = at0;
-	if (deps.existsSync(at) && !wts.some(w => path.resolve(w.path) === path.resolve(at))) {
+	if (deps.existsSync(at) && !wts.some(w => deps.realpathSync(w.path) === deps.realpathSync(at))) {
 		const alt = await deps.ui.input("Path exists. Alternative path?", `${at}-2`);
 		if (!alt) return;
 		if (deps.existsSync(alt)) {
