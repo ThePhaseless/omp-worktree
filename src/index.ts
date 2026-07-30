@@ -30,6 +30,7 @@ export default function worktreeExtension(pi: ExtensionAPI): void {
 					processArgv: process.argv,
 					existsSync: fs.existsSync,
 					realpathSync: fs.realpathSync,
+					symbols: (key) => ctx.ui.theme?.symbol(key as never) ?? "",
 				},
 			);
 		},
