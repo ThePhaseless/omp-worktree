@@ -133,6 +133,7 @@ describe("runWorktreeCommand — create/switch", () => {
 		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
 		expect(addCall(calls)?.args).toEqual(["worktree", "add", sibling("feature"), "feature"]);
 		expect(getExecved()?.argv).toEqual([
+			process.execPath,
 			"/path/to/dist/cli.js",
 			"--cwd",
 			sibling("feature"),

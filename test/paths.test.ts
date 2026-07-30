@@ -79,14 +79,14 @@ describe("buildRelaunchArgs", () => {
 });
 
 describe("buildExecveArgv", () => {
-	test("script mode keeps the script slot", () => {
+	test("script mode keeps exe as argv[0] + script as argv[1]", () => {
 		const { exe, argv } = buildExecveArgv(["/bun", "/path/to/dist/cli.js"], ["--cwd", "/w"]);
 		expect(exe).toBe(process.execPath);
-		expect(argv).toEqual(["/path/to/dist/cli.js", "--cwd", "/w"]);
+		expect(argv).toEqual([process.execPath, "/path/to/dist/cli.js", "--cwd", "/w"]);
 	});
-	test("compiled mode drops the script slot", () => {
+	test("compiled mode uses exe as argv[0]", () => {
 		const { exe, argv } = buildExecveArgv(["/bun"], ["--cwd", "/w"]);
 		expect(exe).toBe(process.execPath);
-		expect(argv).toEqual(["--cwd", "/w"]);
+		expect(argv).toEqual([process.execPath, "--cwd", "/w"]);
 	});
 });

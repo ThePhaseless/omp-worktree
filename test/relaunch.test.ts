@@ -27,6 +27,7 @@ describe("relaunchOmp", () => {
 		expect(execved).not.toBeNull();
 		expect(execved!.exe).toBe(process.execPath);
 		expect(execved!.argv).toEqual([
+			process.execPath,
 			"/path/to/dist/cli.js",
 			"--cwd",
 			"/w",

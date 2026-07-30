@@ -59,6 +59,8 @@ export function buildExecveArgv(
 	const exe = process.execPath;
 	const script = processArgv[1];
 	const isScript = !!script && /\.(c?js|mjs|ts)$/i.test(script);
-	const argv = isScript ? [script, ...newArgs] : [...newArgs];
+	// argv[0] is the program name (convention: the binary path); argv[1] is the
+	// script path (script mode); argv[2+] are the omp CLI flags.
+	const argv = isScript ? [exe, script, ...newArgs] : [exe, ...newArgs];
 	return { exe, argv };
 }
