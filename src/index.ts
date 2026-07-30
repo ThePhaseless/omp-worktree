@@ -24,7 +24,7 @@ export default function worktreeExtension(pi: ExtensionAPI): void {
 							{ customType: "worktree", content: text, display: true, attribution: "agent" },
 							{ triggerTurn: false },
 						),
-					execve: (exe, argv, env) => process.execve(exe, argv, env as string[]),
+					execve: (exe, argv, env) => { console.error("[worktree-debug] execve:", JSON.stringify({ exe, argv })); process.execve(exe, argv, env as string[]); },
 					exit: (code) => process.exit(code),
 					stdin: process.stdin as typeof process.stdin | null,
 					processArgv: process.argv,
