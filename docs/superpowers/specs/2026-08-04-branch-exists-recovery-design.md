@@ -76,6 +76,27 @@ Unchanged, deliberately:
 - D7 dirty-repo and D9 path-collision prompts are untouched — they are not
   branch-existence decisions.
 
+## Branch picker sort
+
+The interactive branch picker lists options in a fixed priority order, not
+refname order:
+
+1. **Current branch** (main repo HEAD, `currentBranch`).
+2. **Remote versions of the current branch** — every remote ref whose local
+   name equals the current branch (`origin/feature`, `upstream/feature`).
+3. **Primary branch** — resolved via `git symbolic-ref refs/remotes/origin/HEAD`
+   (short name of the default branch), falling back to `main`, then `master`,
+   whichever exists in the local or remote lists; `undefined` if none.
+4. **Remote versions of the primary branch** (same matching as 2).
+5. **Default order** — remaining local branches in refname order, then
+   remaining remote refs in refname order (unchanged).
+
+Dedup rules: a label appears once. When the current branch *is* the primary
+branch, slots 3–4 are skipped (slots 1–2 already cover them). When the current
+branch or primary is absent from the lists (detached HEAD, fresh clone with no
+local `main`), its slots are skipped. Sorting applies only to the interactive
+picker, not to `/worktree list` (a worktree display, not a branch list).
+
 ## Implementation
 
 ### `src/git.ts`
@@ -93,9 +114,88 @@ export function branchExistsInAddError(message: string): string | undefined {
 }
 ```
 
+Add the primary-branch resolver (origin/HEAD, fallback `main` → `master`):
+
+```ts
+/**
+ * The repo's primary (default) branch: `git symbolic-ref
+ * refs/remotes/origin/HEAD` short name when it exists in the local/remote
+ * lists, else `main`, else `master`; undefined when none match.
+ */
+export async function primaryBranch(
+	cwd: string,
+	run: GitExec,
+	local: string[],
+	remote: string[],
+): Promise<string | undefined> {
+	const r = await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd);
+	if (r.code === 0) {
+		const name = r.stdout.trim().replace(/^refs\/remotes\/[^/]+\//, "");
+		if (local.includes(name) || remote.some(x => localNameForRemote(x) === name)) return name;
+	}
+	for (const cand of ["main", "master"]) {
+		if (local.includes(cand) || remote.some(x => localNameForRemote(x) === cand)) return cand;
+	}
+	return undefined;
+}
+```
+
+### `src/paths.ts`
+
+Add the pure picker-order helper:
+
+```ts
+/**
+ * Interactive picker order (D12): current branch, remote versions of it,
+ * primary branch, remote versions of it, then remaining locals and remotes in
+ * refname order. Labels are unique.
+ */
+export function sortBranchesForPicker(opts: {
+	local: string[];
+	remote: string[];
+	current?: string;
+	primary?: string;
+}): string[] {
+	const out: string[] = [];
+	const seen = new Set<string>();
+	const add = (b: string) => {
+		if (!seen.has(b)) {
+			seen.add(b);
+			out.push(b);
+		}
+	};
+	const remotesOf = (b: string) => opts.remote.filter(r => localNameForRemote(r) === b);
+	if (opts.current) {
+		add(opts.current);
+		remotesOf(opts.current).forEach(add);
+	}
+	if (opts.primary && opts.primary !== opts.current) {
+		add(opts.primary);
+		remotesOf(opts.primary).forEach(add);
+	}
+	opts.local.filter(b => !seen.has(b)).forEach(add);
+	opts.remote.filter(r => !seen.has(r)).forEach(add);
+	return out;
+}
+```
+
 ### `src/command.ts`
 
-1. Extend `Mode` so recovery can distinguish empty-input from explicit names:
+1. Interactive flow: after `listBranches`, resolve the primary branch, sort the
+   picker options, and keep the existing descriptions (`current` / `local` /
+   `remote` by list membership):
+
+```ts
+const { local, remote } = await listBranches(mainRoot, deps.run);
+const primary = await primaryBranch(mainRoot, deps.run, local, remote);
+const ordered = sortBranchesForPicker({ local, remote, current: cur, primary });
+const options = ordered.map(b => ({
+	label: b,
+	description: b === cur ? "current" : local.includes(b) ? "local" : "remote",
+}));
+```
+
+2. Extend `Mode` so recovery can distinguish empty-input from explicit names:
 
 ```ts
 type Mode =
@@ -108,7 +208,7 @@ type Mode =
    auto-name branch. Typed names, `/worktree <branch>`, and `/worktree --new`
    leave it unset.
 
-2. Fast path: gate the existing switch confirm on `mode.auto`:
+3. Fast path: gate the existing switch confirm on `mode.auto`:
 
 ```ts
 if (existing) {
@@ -129,7 +229,7 @@ if (existing) {
 }
 ```
 
-3. Replace the `addWorktree` catch block with:
+4. Replace the `addWorktree` catch block with:
 
 ```ts
 } catch (e) {
@@ -193,20 +293,39 @@ New/changed tests:
    Existing CLI test "existing worktree + accept → relaunch" keeps
    `confirms: [true]`.
 
+**Sort tests.**
+
+- `test/paths.test.ts` (pure helper): current first; remotes-of-current second
+  (multi-remote, slashed names via `localNameForRemote`); primary third;
+  remotes-of-primary fourth; remainder in refname order, locals before remotes;
+  dedup when `current === primary` (single `origin/main`); detached HEAD
+  (no current); no primary; primary absent from lists (slot skipped).
+- `test/git.test.ts` (following its existing harness): `primaryBranch` resolves
+  origin/HEAD; origin/HEAD pointing at a name absent from both lists falls back
+  to `main`; `main` absent falls back to `master`; nothing → `undefined`.
+- `test/command.test.ts`: extend `makeUi` to record `select` calls
+  (title + options), and assert the interactive flow passes sorted options —
+  first option is the current branch, followed by its remotes, then the
+  primary, then its remotes. Existing tests are unaffected (their `selects`
+  reference labels, and ordering within the shift-based script stays valid).
+
 ## Docs
 
 - `README.md`, "Checks" section: add a **Branch name collision** bullet
   describing the prompted recovery for typed names and the automatic recovery
   for empty-input picks.
-- `README.md`, interactive "Empty" bullet: note that an already-existing
-  branch (local or remote pick) is used directly — collisions with existing
-  worktrees switch automatically, and auto-defaulted names that exist locally
-  are checked out directly.
+- `README.md`, interactive section: note the picker order (current branch →
+  its remotes → primary branch → its remotes → rest) and that an
+  already-existing branch (local or remote pick) is used directly — collisions
+  with existing worktrees switch automatically, and auto-defaulted names that
+  exist locally are checked out directly.
 - `CONTEXT.md`: amend D3 (empty-input switches into the existing worktree
   without a confirm) and add D11 — branch-name collision recovers by checking
   out the existing branch at the same path; prompted for explicit names,
   automatic for empty-input picks; safe because of the single-checkout rule +
-  fast path.
+  fast path. Add D12 — picker sort order (current → remotes of current →
+  primary → remotes of primary → refname order; primary = origin/HEAD default,
+  fallback `main` → `master`).
 
 ## Out of scope
 
