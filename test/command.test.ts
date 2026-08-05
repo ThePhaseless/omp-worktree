@@ -21,6 +21,7 @@ interface RunOpts {
 	notRepo?: boolean;
 	addFails?: boolean;
 	addFailStderr?: string;
+	addFailTimes?: number;
 }
 
 function porcelainOutput(wts: WorktreeInfo[]): string {
@@ -57,7 +58,7 @@ function makeRun(opts: RunOpts) {
 			if (args[1] === "list") return { stdout: porcelainOutput(opts.worktrees ?? []), stderr: "", code: 0 };
 			if (args[1] === "add") {
 				if (opts.addFailStderr !== undefined) {
-					if (addCount++ === 0) return { stdout: "", stderr: opts.addFailStderr, code: 1 };
+					if (addCount++ < (opts.addFailTimes ?? 1)) return { stdout: "", stderr: opts.addFailStderr, code: 1 };
 					return { stdout: "", stderr: "", code: 0 };
 				}
 				return opts.addFails ? { stdout: "", stderr: "add failed", code: 1 } : { stdout: "", stderr: "", code: 0 };
@@ -355,6 +356,26 @@ describe("runWorktreeCommand — create/switch", () => {
 		expect(adds.length).toBe(1);
 		expect(getExecved()).toBeNull();
 		expect(displayMsgs.some(m => m.includes("unable to access"))).toBe(true);
+	});
+
+	test("recovery retry failure → error shown, no relaunch", async () => {
+		const { ui } = makeUi({});
+		const { deps, calls, getExecved, displayMsgs } = makeDeps(
+			{
+				current: "main",
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+				addFailStderr: "fatal: a branch named 'feat' already exists",
+				addFailTimes: 2,
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("--new feat", makeCtx(SESSION_FILE), deps);
+		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
+		expect(adds.length).toBe(2);
+		expect(adds[1].args).toEqual(["worktree", "add", sibling("feat"), "feat"]);
+		expect(getExecved()).toBeNull();
+		expect(displayMsgs.some(m => m.includes("a branch named 'feat' already exists"))).toBe(true);
 	});
 });
 
