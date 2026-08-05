@@ -150,4 +150,12 @@ describe("sortBranchesForPicker", () => {
 			}),
 		).toEqual(["foo/bar", "origin/foo/bar", "main"]);
 	});
+	test("dedupes labels present in both arrays and within an array", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["a", "a", "origin/x"],
+				remote: ["origin/x", "b"],
+			}),
+		).toEqual(["a", "origin/x", "b"]);
+	});
 });

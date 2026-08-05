@@ -39,7 +39,7 @@ export function shortRef(ref: string): string {
 /**
  * Interactive picker order (D12): current branch, remote versions of it,
  * primary branch, remote versions of it, then remaining locals and remotes in
- * refname order. Labels are unique.
+ * input order. Labels are unique.
  */
 export function sortBranchesForPicker(opts: {
 	local: string[];
