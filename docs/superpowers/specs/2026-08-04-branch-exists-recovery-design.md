@@ -57,13 +57,11 @@ checkout, no `-b`) at the same path, then `relaunchInto(path)`:
 | Empty input (interactive; only reachable via remote pick, D8 auto-name) | **Auto-recover, no prompt**: display *"Branch `<name>` already exists locally — checking it out"*, retry plain checkout, relaunch. |
 | Custom typed name (interactive), or `/worktree --new <name>` | Prompt: *"Branch `<name>` already exists — check it out in the new worktree instead?"*. **Accept** → retry plain checkout + relaunch. **Decline** → display the original git error and return. |
 
-The existing-worktree fast path (D3) gets the same discriminator. When the
-resolved branch is already checked out in another worktree:
-
-| How the branch was entered | Behavior |
-|---|---|
-| Empty input (interactive, local or remote pick) | **Auto-switch, no prompt**: display *"Branch `<branch>` is already checked out at `<path>` — switching"*, relaunch into that worktree. |
-| Custom typed name, or CLI `/worktree <branch>` | Confirm *"Switch into existing worktree at `<path>`?"* (unchanged). |
+The existing-worktree fast path (D3) is unchanged: when the resolved branch is
+already checked out in another worktree, it always prompts
+*"Switch into existing worktree at `<path>`?"* — regardless of how the branch
+was entered (empty input, typed name, or CLI). The `-b` recovery is the only
+place where empty-input picks auto-confirm.
 
 Unchanged, deliberately:
 
@@ -73,6 +71,8 @@ Unchanged, deliberately:
   out elsewhere mid-flight), display that error and return; no second prompt.
 - The "Already in `<path>` — branch is checked out here" warning (D3) stays a
   warning.
+- The fast-path "Switch into existing worktree" confirm (D3) — always prompts,
+  including empty-input picks.
 - D7 dirty-repo and D9 path-collision prompts are untouched — they are not
   branch-existence decisions.
 
@@ -199,26 +199,21 @@ const options = ordered.map(b => ({
 
 ```ts
 type Mode =
-	| { kind: "checkout"; branch: string; auto?: boolean }
+	| { kind: "checkout"; branch: string }
 	| { kind: "new"; name: string; baseRef?: string; auto?: boolean };
 ```
 
-   `auto: true` means "reached with empty input (use-as-is)": set in the
-   interactive flow for the local-pick checkout branch and the remote-pick
-   auto-name branch. Typed names, `/worktree <branch>`, and `/worktree --new`
-   leave it unset.
+   `auto: true` means "auto-defaulted name from a remote pick with empty input
+   (D8)": set only in the interactive remote-pick branch. It gates the `-b`
+   collision recovery only; the fast-path switch confirm is independent and
+   unchanged.
 
-3. Fast path: gate the existing switch confirm on `mode.auto`:
+3. Fast path: unchanged — the switch confirm stays for every entry path:
 
 ```ts
 if (existing) {
 	if (deps.realpathSync(existing.path) === deps.realpathSync(cwd)) {
 		deps.display(/* "Already in …" warning, unchanged */);
-		return;
-	}
-	if (mode.auto) {
-		deps.display(`${deps.symbols("status.warning")} Branch ${branch} is already checked out at ${existing.path} — switching`);
-		relaunchInto(existing.path);
 		return;
 	}
 	if (await deps.ui.confirm("Worktree exists", `Switch into existing worktree at ${existing.path}?`)) {
@@ -282,16 +277,11 @@ New/changed tests:
 4. **Unrelated failure → no prompt.** `addFailStderr: "fatal: unable to access
    'https://…'"` with `/worktree --new feat`, empty confirm script. Assert
    exactly one add call, no execve, error displayed.
-5. **Auto-switch fast path (local pick, empty input) — CHANGED test.** Pick
-   `feature` (already checked out at `sibling("feature")`), empty input,
-   **empty** confirm script. Assert execve relaunches into
-   `sibling("feature")`, no confirm consumed. (Replaces the current
+5. **Fast path unchanged.** Existing tests keep their confirm scripts:
    "interactive pick current → empty input → switch to existing worktree"
-   test, which passes `confirms: [true]`.)
-6. **Fast path still prompts for typed names / CLI.** New test: interactive
-   typed name that is checked out elsewhere, `confirms: [false]` → no execve.
-   Existing CLI test "existing worktree + accept → relaunch" keeps
-   `confirms: [true]`.
+   (`confirms: [true]`, execve into `sibling("feature")`) and "existing
+   worktree + accept → relaunch" (CLI, `confirms: [true]`). No new fast-path
+   tests.
 
 **Sort tests.**
 
@@ -316,16 +306,16 @@ New/changed tests:
   for empty-input picks.
 - `README.md`, interactive section: note the picker order (current branch →
   its remotes → primary branch → its remotes → rest) and that an
-  already-existing branch (local or remote pick) is used directly — collisions
-  with existing worktrees switch automatically, and auto-defaulted names that
-  exist locally are checked out directly.
-- `CONTEXT.md`: amend D3 (empty-input switches into the existing worktree
-  without a confirm) and add D11 — branch-name collision recovers by checking
-  out the existing branch at the same path; prompted for explicit names,
-  automatic for empty-input picks; safe because of the single-checkout rule +
-  fast path. Add D12 — picker sort order (current → remotes of current →
-  primary → remotes of primary → refname order; primary = origin/HEAD default,
-  fallback `main` → `master`).
+  already-existing branch (local or remote pick) is used directly — picking a
+  branch already checked out elsewhere still asks to switch (D3 unchanged),
+  and auto-defaulted names that exist locally are checked out directly without
+  a prompt.
+- `CONTEXT.md`: add D11 — branch-name collision recovers by checking out the
+  existing branch at the same path; prompted for explicit names, automatic
+  for empty-input picks; safe because of the single-checkout rule + fast
+  path. D3 is unchanged. Add D12 — picker sort order (current → remotes of
+  current → primary → remotes of primary → refname order; primary =
+  origin/HEAD default, fallback `main` → `master`).
 
 ## Out of scope
 
