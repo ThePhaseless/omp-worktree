@@ -106,5 +106,6 @@ Canonical vocabulary for the omp git-worktree plugin. Terms only; no implementat
 - **D12 — Picker sorts current and primary branches first.** The interactive
   branch picker order: current branch, remote versions of the current branch,
   primary branch (`refs/remotes/origin/HEAD` target, falling back to `main`,
-  then `master`), remote versions of the primary branch, then remaining local
+  then `master`; listed when it exists locally), remote versions of the primary
+  branch, then remaining local
   and remote refs in refname order.

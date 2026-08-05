@@ -39,7 +39,8 @@ name:
 
 Branches are listed in priority order: the current branch, remote versions of
 the current branch, the primary branch (`origin/HEAD`, falling back to
-`main`/`master`), remote versions of the primary branch, then everything else.
+`main`/`master`; listed when it exists locally), remote versions of the primary
+branch, then everything else.
 
 ### Non-interactive
 
