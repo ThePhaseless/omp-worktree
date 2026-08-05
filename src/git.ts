@@ -104,6 +104,15 @@ export async function addWorktree(cwd: string, run: GitExec, opts: AddWorktreeOp
 }
 
 /**
+ * If the error message is git's `-b` branch-name-collision fatal, return the
+ * colliding branch name; otherwise undefined.
+ */
+export function branchExistsInAddError(message: string): string | undefined {
+	const m = message.match(/^fatal: a branch named '(.+)' already exists$/);
+	return m ? m[1] : undefined;
+}
+
+/**
  * Remove a worktree by path or by branch name (resolved via `listWorktrees`).
  * Throws on non-zero exit.
  */

@@ -5,6 +5,7 @@ import * as os from "node:os";
 import type { GitExec } from "../src/git";
 import {
 	addWorktree,
+	branchExistsInAddError,
 	currentBranch,
 	formatWorktreeList,
 	listBranches,
@@ -135,5 +136,19 @@ describe("git integration", () => {
 		expect(out).toContain("(main)");
 		expect(out).toContain("feature");
 		expect(out).toContain(wt);
+	});
+});
+
+describe("branchExistsInAddError", () => {
+	test("returns name for branch-exists fatal", () => {
+		expect(branchExistsInAddError("fatal: a branch named 'feat' already exists")).toBe("feat");
+	});
+	test("handles slashed branch names", () => {
+		expect(branchExistsInAddError("fatal: a branch named 'feature/foo' already exists")).toBe("feature/foo");
+	});
+	test("returns undefined for other errors", () => {
+		expect(branchExistsInAddError("fatal: 'feat' is already used by worktree at '/x'")).toBeUndefined();
+		expect(branchExistsInAddError("add failed")).toBeUndefined();
+		expect(branchExistsInAddError("fatal: a branch named 'feat' already exists\nmore")).toBeUndefined();
 	});
 });
