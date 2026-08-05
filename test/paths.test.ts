@@ -7,6 +7,7 @@ import {
 	localNameForRemote,
 	sanitizeBranchName,
 	shortRef,
+	sortBranchesForPicker,
 } from "../src/paths";
 
 describe("sanitizeBranchName", () => {
@@ -88,5 +89,65 @@ describe("buildExecveArgv", () => {
 		const { exe, argv } = buildExecveArgv(["/bun"], ["--cwd", "/w"]);
 		expect(exe).toBe(process.execPath);
 		expect(argv).toEqual([process.execPath, "--cwd", "/w"]);
+	});
+});
+
+describe("sortBranchesForPicker", () => {
+	test("current → its remotes → primary → its remotes → rest", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["feature", "main", "zlocal"],
+				remote: ["origin/main", "origin/feature", "upstream/feature", "origin/other", "origin/zlocal"],
+				current: "feature",
+				primary: "main",
+			}),
+		).toEqual([
+			"feature",
+			"origin/feature",
+			"upstream/feature",
+			"main",
+			"origin/main",
+			"zlocal",
+			"origin/other",
+			"origin/zlocal",
+		]);
+	});
+	test("current === primary collapses slots (no duplicate origin/main)", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["main", "feature"],
+				remote: ["origin/main", "origin/feature"],
+				current: "main",
+				primary: "main",
+			}),
+		).toEqual(["main", "origin/main", "feature", "origin/feature"]);
+	});
+	test("no current (detached) → primary slots first", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["main", "a"],
+				remote: ["origin/main"],
+				primary: "main",
+			}),
+		).toEqual(["main", "origin/main", "a"]);
+	});
+	test("no primary → current + its remotes first, rest default", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["feature", "a"],
+				remote: ["origin/feature", "origin/b"],
+				current: "feature",
+			}),
+		).toEqual(["feature", "origin/feature", "a", "origin/b"]);
+	});
+	test("slashed remote names match by local name", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["foo/bar", "main"],
+				remote: ["origin/foo/bar"],
+				current: "foo/bar",
+				primary: "main",
+			}),
+		).toEqual(["foo/bar", "origin/foo/bar", "main"]);
 	});
 });

@@ -37,6 +37,39 @@ export function shortRef(ref: string): string {
 }
 
 /**
+ * Interactive picker order (D12): current branch, remote versions of it,
+ * primary branch, remote versions of it, then remaining locals and remotes in
+ * refname order. Labels are unique.
+ */
+export function sortBranchesForPicker(opts: {
+	local: string[];
+	remote: string[];
+	current?: string;
+	primary?: string;
+}): string[] {
+	const out: string[] = [];
+	const seen = new Set<string>();
+	const add = (b: string) => {
+		if (!seen.has(b)) {
+			seen.add(b);
+			out.push(b);
+		}
+	};
+	const remotesOf = (b: string) => opts.remote.filter(r => localNameForRemote(r) === b);
+	if (opts.current) {
+		add(opts.current);
+		remotesOf(opts.current).forEach(add);
+	}
+	if (opts.primary && opts.primary !== opts.current) {
+		add(opts.primary);
+		remotesOf(opts.primary).forEach(add);
+	}
+	opts.local.filter(b => !seen.has(b)).forEach(add);
+	opts.remote.filter(r => !seen.has(r)).forEach(add);
+	return out;
+}
+
+/**
  * Build the omp CLI flags that move into a worktree while keeping the session in
  * the Main bucket. `--fork <sessionFile>` is only appended when a session file
  * is supplied (D1 fork, D6).
