@@ -22,6 +22,7 @@ interface RunOpts {
 	addFails?: boolean;
 	addFailStderr?: string;
 	addFailTimes?: number;
+	originHead?: string;
 }
 
 function porcelainOutput(wts: WorktreeInfo[]): string {
@@ -66,6 +67,11 @@ function makeRun(opts: RunOpts) {
 			if (args[1] === "remove") return { stdout: "", stderr: "", code: 0 };
 		}
 		if (sub === "status") return { stdout: opts.porcelain ?? "", stderr: "", code: 0 };
+		if (sub === "symbolic-ref") {
+			return opts.originHead !== undefined
+				? { stdout: opts.originHead, stderr: "", code: 0 }
+				: { stdout: "", stderr: "fatal: not a symbolic ref", code: 1 };
+		}
 		return { stdout: "", stderr: "", code: 0 };
 	};
 	return { run, calls };
@@ -77,18 +83,26 @@ interface UiScript {
 	confirms?: boolean[];
 }
 
-function makeUi(script: UiScript): { ui: WorktreeUI; notifies: string[] } {
+function makeUi(script: UiScript): {
+	ui: WorktreeUI;
+	notifies: string[];
+	selectCalls: Array<{ title: string; options: Array<string | { label: string; description?: string }> }>;
+} {
 	const s = [...(script.selects ?? [])];
 	const i = [...(script.inputs ?? [])];
 	const c = [...(script.confirms ?? [])];
 	const notifies: string[] = [];
+	const selectCalls: Array<{ title: string; options: Array<string | { label: string; description?: string }> }> = [];
 	const ui: WorktreeUI = {
-		select: async () => s.shift(),
+		select: async (title, options) => {
+			selectCalls.push({ title, options });
+			return s.shift();
+		},
 		confirm: async () => c.shift() ?? false,
 		input: async () => i.shift(),
 		notify: (msg) => notifies.push(msg),
 	};
-	return { ui, notifies };
+	return { ui, notifies, selectCalls };
 }
 
 function makeDeps(opts: RunOpts, ui: WorktreeUI, existsPaths: Set<string>) {
@@ -376,6 +390,54 @@ describe("runWorktreeCommand — create/switch", () => {
 		expect(adds[1].args).toEqual(["worktree", "add", sibling("feat"), "feat"]);
 		expect(getExecved()).toBeNull();
 		expect(displayMsgs.some(m => m.includes("a branch named 'feat' already exists"))).toBe(true);
+	});
+
+	test("picker options sorted: current → its remotes → primary → its remotes → rest", async () => {
+		const { ui, selectCalls } = makeUi({ selects: ["feature"], inputs: [""] });
+		const { deps } = makeDeps(
+			{
+				current: "feature",
+				local: ["feature", "main", "zlocal"],
+				remote: ["origin/main", "origin/feature", "upstream/feature", "origin/other", "origin/zlocal"],
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
+		const options = (selectCalls[0]?.options ?? []) as Array<{ label: string; description?: string }>;
+		expect(options.map(o => o.label)).toEqual([
+			"feature",
+			"origin/feature",
+			"upstream/feature",
+			"main",
+			"origin/main",
+			"zlocal",
+			"origin/other",
+			"origin/zlocal",
+		]);
+		const byLabel = new Map(options.map(o => [o.label, o.description]));
+		expect(byLabel.get("feature")).toBe("current");
+		expect(byLabel.get("main")).toBe("local");
+		expect(byLabel.get("origin/other")).toBe("remote");
+	});
+
+	test("picker honors origin/HEAD default branch", async () => {
+		const { ui, selectCalls } = makeUi({ selects: ["feature"], inputs: [""] });
+		const { deps } = makeDeps(
+			{
+				current: "feature",
+				local: ["feature", "trunk"],
+				remote: ["origin/trunk", "origin/feature"],
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+				originHead: "refs/remotes/origin/trunk",
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
+		const options = (selectCalls[0]?.options ?? []) as Array<{ label: string }>;
+		expect(options.map(o => o.label)).toEqual(["feature", "origin/feature", "trunk", "origin/trunk"]);
 	});
 });
 

@@ -7,6 +7,7 @@ import {
 	formatWorktreeList,
 	listBranches,
 	listWorktrees,
+	primaryBranch,
 	removeWorktree,
 	resolveMainRepoRoot,
 	statusPorcelain,
@@ -16,6 +17,7 @@ import {
 	computeDefaultWorktreePath,
 	localNameForRemote,
 	shortRef,
+	sortBranchesForPicker,
 } from "./paths";
 import { parseWorktreeArgs } from "./args";
 import { relaunchOmp } from "./relaunch";
@@ -93,10 +95,12 @@ export async function runWorktreeCommand(
 	if (action.kind === "interactive") {
 		const cur = await currentBranch(mainRoot, deps.run);
 		const { local, remote } = await listBranches(mainRoot, deps.run);
-		const options: Array<string | { label: string; description?: string }> = [
-			...local.map(b => ({ label: b, description: b === cur ? "current" : "local" })),
-			...remote.map(r => ({ label: r, description: "remote" })),
-		];
+		const primary = await primaryBranch(mainRoot, deps.run, local, remote);
+		const ordered = sortBranchesForPicker({ local, remote, current: cur, primary });
+		const options: Array<string | { label: string; description?: string }> = ordered.map(b => ({
+			label: b,
+			description: b === cur ? "current" : local.includes(b) ? "local" : "remote",
+		}));
 		// Loop: pick a branch → input. Esc on input goes back to the picker.
 		// Empty input = checkout the picked branch as-is.
 		// Non-empty input = new branch named after the input, based off the pick.
