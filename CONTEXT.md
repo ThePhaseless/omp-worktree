@@ -95,3 +95,16 @@ Canonical vocabulary for the omp git-worktree plugin. Terms only; no implementat
 
 - **D10 — Delivered as a new public GitHub repo.** `ThePhaseless/omp-worktree`;
   install via `omp plugin install github:ThePhaseless/omp-worktree`.
+
+- **D11 — Worktree creation is automatic.** If no worktree checks out the
+  requested branch, the plugin creates one — plain checkout when the branch
+  exists locally, `-b` from the base otherwise — with no confirmation. A `-b`
+  branch-name collision is retried as a plain checkout of the existing branch
+  at the same path, without prompting. The only prompt for an existing branch
+  is the D3 switch into its worktree.
+
+- **D12 — Picker sorts current and primary branches first.** The interactive
+  branch picker order: current branch, remote versions of the current branch,
+  primary branch (`refs/remotes/origin/HEAD` target, falling back to `main`,
+  then `master`), remote versions of the primary branch, then remaining local
+  and remote refs in refname order.

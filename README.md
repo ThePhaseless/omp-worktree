@@ -31,10 +31,15 @@ name:
     it instead of creating a new one.
   - If you're already in the worktree where it's checked out, warns and returns.
   - Remote branches create a local tracking branch with an auto-defaulted name
-    (`origin/x` → `x`).
+    (`origin/x` → `x`); if that name already exists locally, it is checked out
+    directly without prompting.
 - **Non-empty** — create a new branch with that name, based off the selected
   branch, and a worktree for it.
 - **Esc** — go back to the branch picker.
+
+Branches are listed in priority order: the current branch, remote versions of
+the current branch, the primary branch (`origin/HEAD`, falling back to
+`main`/`master`), remote versions of the primary branch, then everything else.
 
 ### Non-interactive
 
@@ -56,6 +61,9 @@ worktree location (a sibling of the main repo named `<repo>-wt-<branch>`).
   the count and asked to confirm (they won't exist in the new worktree).
 - **Path collision** — if the default worktree path already exists, you're
   prompted for an alternative (default `<path>-2`).
+- **Branch name collision** — if a new branch name already exists locally, the
+  existing branch is checked out in the new worktree automatically (no
+  prompt).
 
 ## Shared-conversation behavior
 
