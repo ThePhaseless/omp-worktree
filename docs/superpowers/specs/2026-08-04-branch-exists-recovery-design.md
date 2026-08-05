@@ -41,27 +41,26 @@ Three entry points reach this failure:
 
 ## Behavior
 
-The recovery decision is keyed on **how the branch name was entered**, not on
-the pick source. A picked branch accepted with **empty input** means "use it
-as-is" — intent is unambiguous, so no confirmation is shown. A **custom typed
-name** (or any CLI form) expresses intent that may contradict reality
-(create-new colliding with exists), so those paths prompt.
+Creating a worktree is fully automatic: when no worktree checks out the
+requested branch, the plugin creates one and relaunches into it — whether the
+branch exists locally or not. A branch that exists locally is checked out
+directly (`git worktree add <path> <branch>`); a branch that does not exist is
+created from the base (`-b <branch> <path> [<base>]`). No confirmation is shown
+for either.
 
 When `addWorktree` fails in `new` mode and the message matches
 `/^fatal: a branch named '(.+)' already exists$/` with the captured name equal
-to `mode.name`, recover by retrying `git worktree add <path> <name>` (plain
-checkout, no `-b`) at the same path, then `relaunchInto(path)`:
+to `mode.name`, the failure is swallowed and retried automatically: display
+*"Branch `<name>` already exists locally — checking it out"*, retry
+`git worktree add <path> <name>` (plain checkout, no `-b`) at the same path,
+then `relaunchInto(path)`. No prompt — this is the same "no worktree exists →
+auto-create" rule applied to an existing local branch.
 
-| How the name was entered | Behavior |
-|---|---|
-| Empty input (interactive; only reachable via remote pick, D8 auto-name) | **Auto-recover, no prompt**: display *"Branch `<name>` already exists locally — checking it out"*, retry plain checkout, relaunch. |
-| Custom typed name (interactive), or `/worktree --new <name>` | Prompt: *"Branch `<name>` already exists — check it out in the new worktree instead?"*. **Accept** → retry plain checkout + relaunch. **Decline** → display the original git error and return. |
-
-The existing-worktree fast path (D3) is unchanged: when the resolved branch is
-already checked out in another worktree, it always prompts
+The only prompt for an existing branch is the D3 switch: when the resolved
+branch is already checked out in another worktree, the plugin always asks
 *"Switch into existing worktree at `<path>`?"* — regardless of how the branch
-was entered (empty input, typed name, or CLI). The `-b` recovery is the only
-place where empty-input picks auto-confirm.
+was entered (empty input, typed name, or CLI). The "Already in `<path>` —
+branch is checked out here" warning (D3) is unchanged.
 
 Unchanged, deliberately:
 
@@ -195,49 +194,13 @@ const options = ordered.map(b => ({
 }));
 ```
 
-2. Extend `Mode` so recovery can distinguish empty-input from explicit names:
-
-```ts
-type Mode =
-	| { kind: "checkout"; branch: string }
-	| { kind: "new"; name: string; baseRef?: string; auto?: boolean };
-```
-
-   `auto: true` means "auto-defaulted name from a remote pick with empty input
-   (D8)": set only in the interactive remote-pick branch. It gates the `-b`
-   collision recovery only; the fast-path switch confirm is independent and
-   unchanged.
-
-3. Fast path: unchanged — the switch confirm stays for every entry path:
-
-```ts
-if (existing) {
-	if (deps.realpathSync(existing.path) === deps.realpathSync(cwd)) {
-		deps.display(/* "Already in …" warning, unchanged */);
-		return;
-	}
-	if (await deps.ui.confirm("Worktree exists", `Switch into existing worktree at ${existing.path}?`)) {
-		relaunchInto(existing.path);
-		return;
-	}
-	return;
-}
-```
-
-4. Replace the `addWorktree` catch block with:
+2. Replace the `addWorktree` catch block with:
 
 ```ts
 } catch (e) {
 	const msg = (e as Error).message;
 	if (mode.kind === "new" && branchExistsInAddError(msg) === mode.name) {
-		if (mode.auto) {
-			deps.display(`${deps.symbols("status.warning")} Branch ${mode.name} already exists locally — checking it out`);
-		} else if (
-			!(await deps.ui.confirm("Branch exists", `Branch ${mode.name} already exists — check it out in the new worktree instead?`))
-		) {
-			deps.display(`${deps.symbols("status.warning")} ${msg}`);
-			return;
-		}
+		deps.display(`${deps.symbols("status.warning")} Branch ${mode.name} already exists locally — checking it out`);
 		try {
 			await addWorktree(mainRoot, deps.run, { path: at, branch: mode.name });
 		} catch (e2) {
@@ -252,6 +215,9 @@ if (existing) {
 }
 ```
 
+The `Mode` type, the D3 fast path, and the interactive remote-pick branch are
+unchanged; no new state is introduced.
+
 ## Testing
 
 Extend the `test/command.test.ts` harness: add `addFailStderr?: string` to
@@ -259,25 +225,22 @@ Extend the `test/command.test.ts` harness: add `addFailStderr?: string` to
 calls succeed (a counter inside `makeRun`). Keep `addFails` for always-fail
 cases.
 
-New/changed tests:
+New tests (all with **empty** confirm scripts — a prompt would return `false`
+and abort before the retry/execve, so a passing test proves no prompt was
+shown):
 
-1. **Auto-recover `-b` (remote pick, empty input).** Select `origin/x`, empty
-   input, local `x` exists (worktrees: main only),
-   `addFailStderr: "fatal: a branch named 'x' already exists"`, **empty** confirm
-   script. Assert: second add call is `["worktree", "add", <path>, "x"]` (no
-   `-b`), execve with `--cwd <path>`, display contains the note. The empty
-   confirm script proves no prompt was shown (a prompt would return `false`
-   and abort).
-2. **Prompted recover (typed name), accept.** `/worktree --new feat`,
-   `addFailStderr` with `feat`, `confirms: [true]`. Assert retry call
-   `["worktree", "add", <path>, "feat"]` and relaunch.
-3. **Prompted recover, decline.** Same but `confirms: [false]`. Assert no
-   second add call, no execve, display contains `a branch named 'feat' already
-   exists`.
-4. **Unrelated failure → no prompt.** `addFailStderr: "fatal: unable to access
-   'https://…'"` with `/worktree --new feat`, empty confirm script. Assert
-   exactly one add call, no execve, error displayed.
-5. **Fast path unchanged.** Existing tests keep their confirm scripts:
+1. **`--new` collision auto-recovers.** `/worktree --new feat`,
+   `addFailStderr: "fatal: a branch named 'feat' already exists"`, empty
+   confirm script. Assert: first add `["worktree", "add", "-b", "feat",
+   <path>]`, second add `["worktree", "add", <path>, "feat"]` (no `-b`),
+   execve with `--cwd <path>`, display contains "already exists locally".
+2. **Remote-pick collision auto-recovers.** Select `origin/x`, empty input,
+   local `x` exists, `addFailStderr` with `x`. Assert second add
+   `["worktree", "add", <path>, "x"]`, execve, note displayed.
+3. **Unrelated failure → no recovery.** `addFailStderr: "fatal: unable to
+   access 'https://…'"` with `/worktree --new feat`, empty confirm script.
+   Assert exactly one add call, no execve, error displayed.
+4. **Fast path unchanged.** Existing tests keep their confirm scripts:
    "interactive pick current → empty input → switch to existing worktree"
    (`confirms: [true]`, execve into `sibling("feature")`) and "existing
    worktree + accept → relaunch" (CLI, `confirms: [true]`). No new fast-path
@@ -301,21 +264,22 @@ New/changed tests:
 
 ## Docs
 
-- `README.md`, "Checks" section: add a **Branch name collision** bullet
-  describing the prompted recovery for typed names and the automatic recovery
-  for empty-input picks.
+- `README.md`, "Checks" section: add a **Branch name collision** bullet —
+  if a new branch name already exists locally, the existing branch is checked
+  out in the new worktree automatically (no prompt).
 - `README.md`, interactive section: note the picker order (current branch →
-  its remotes → primary branch → its remotes → rest) and that an
-  already-existing branch (local or remote pick) is used directly — picking a
-  branch already checked out elsewhere still asks to switch (D3 unchanged),
-  and auto-defaulted names that exist locally are checked out directly without
-  a prompt.
-- `CONTEXT.md`: add D11 — branch-name collision recovers by checking out the
-  existing branch at the same path; prompted for explicit names, automatic
-  for empty-input picks; safe because of the single-checkout rule + fast
-  path. D3 is unchanged. Add D12 — picker sort order (current → remotes of
-  current → primary → remotes of primary → refname order; primary =
-  origin/HEAD default, fallback `main` → `master`).
+  its remotes → primary branch → its remotes → rest) and that picking a
+  branch always creates a worktree for it (or checks out the existing local
+  branch of that name); only when a worktree already checks out the branch
+  does the plugin ask before switching (D3).
+- `CONTEXT.md`: add D11 — worktree creation is automatic: if no worktree
+  checks out the requested branch, the plugin creates one (plain checkout
+  when the branch exists locally, `-b` otherwise); a `-b` branch-name
+  collision is retried as a plain checkout without prompting. The only prompt
+  for an existing branch is the D3 switch into its worktree. Add D12 —
+  picker sort order (current → remotes of current → primary → remotes of
+  primary → refname order; primary = origin/HEAD default, fallback `main` →
+  `master`).
 
 ## Out of scope
 

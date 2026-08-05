@@ -4,7 +4,7 @@
 
 **Goal:** When `git worktree add -b` fails because the branch already exists, recover by checking out the existing branch at the same path (prompted for explicit names, automatic for empty-input remote picks), and sort the interactive branch picker: current branch → its remotes → primary branch → its remotes → rest.
 
-**Architecture:** Two pure/helper additions (`branchExistsInAddError`, `primaryBranch` in `src/git.ts`; `sortBranchesForPicker` in `src/paths.ts`) plus wiring in `runWorktreeCommand` (`src/command.ts`): a `Mode.auto` flag marks auto-defaulted names so the `-b` catch block can decide prompt-vs-auto, and the interactive flow sorts options before showing the picker. The D3 fast-path switch confirm and D7/D9 prompts are untouched.
+**Architecture:** Two pure/helper additions (`branchExistsInAddError`, `primaryBranch` in `src/git.ts`; `sortBranchesForPicker` in `src/paths.ts`) plus wiring in `runWorktreeCommand` (`src/command.ts`): the `-b` catch block recognizes git's branch-exists fatal and retries a plain checkout automatically (no prompt), and the interactive flow sorts options before showing the picker. The D3 fast-path switch confirm and D7/D9 prompts are untouched.
 
 **Tech Stack:** TypeScript, bun:test (`bun test`), no new dependencies.
 
@@ -316,12 +316,12 @@ git commit -m "feat: sort picker options — current, its remotes, primary, its 
 ### Task 4: `-b` collision recovery in `runWorktreeCommand`
 
 **Files:**
-- Modify: `src/command.ts` (Mode type; interactive remote-pick branch sets `auto`; the `addWorktree` catch block)
-- Modify: `test/command.test.ts` (harness `RunOpts.addFailStderr` + add-call counter; 4 new tests)
+- Modify: `src/command.ts` (the `addWorktree` catch block only)
+- Modify: `test/command.test.ts` (harness `RunOpts.addFailStderr` + add-call counter; 3 new tests)
 
 **Interfaces:**
 - Consumes: `branchExistsInAddError` from Task 1 (`./git` import list gains it).
-- Produces: `Mode` = `{ kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string; auto?: boolean }`. `auto: true` marks auto-defaulted names (remote pick + empty input); gates the recovery prompt. The `-b` recovery: on branch-exists fatal matching `mode.name`, auto mode retries a plain checkout with an info note; explicit mode prompts `"Branch <name> already exists — check it out in the new worktree instead?"` and retries on accept, shows the error on decline; any other failure displays the error as today.
+- Produces: the `-b` collision recovery — when the branch-exists fatal matches `mode.name`, retry `git worktree add <path> <name>` (plain checkout) at the same `at` path, show an info note, and relaunch. No prompt, no new state (`Mode` and the interactive branches are unchanged). Any other failure displays the error as today.
 
 - [ ] **Step 1: Extend the test harness** — in `test/command.test.ts`:
    1. Add to `RunOpts`: `addFailStderr?: string;`
@@ -337,9 +337,29 @@ git commit -m "feat: sort picker options — current, its remotes, primary, its 
 		}
 ```
 
-- [ ] **Step 2: Write the failing tests** — append inside the `describe("runWorktreeCommand — create/switch", ...)` block (after the existing "no session file → execve argv has no --fork" test):
+- [ ] **Step 2: Write the failing tests** — append inside the `describe("runWorktreeCommand — create/switch", ...)` block (after the existing "no session file → execve argv has no --fork" test). All three use **empty** confirm scripts: if the code prompted, `confirm` would return `false` and abort before the retry/execve, so a passing test proves no prompt:
 
 ```ts
+	test("--new with existing branch name → auto-recover checkout, no prompt", async () => {
+		const { ui } = makeUi({});
+		const { deps, calls, getExecved, displayMsgs } = makeDeps(
+			{
+				current: "main",
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+				addFailStderr: "fatal: a branch named 'feat' already exists",
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("--new feat", makeCtx(SESSION_FILE), deps);
+		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
+		expect(adds.length).toBe(2);
+		expect(adds[0].args).toEqual(["worktree", "add", "-b", "feat", sibling("feat")]);
+		expect(adds[1].args).toEqual(["worktree", "add", sibling("feat"), "feat"]);
+		expect(getExecved()?.argv).toContain(sibling("feat"));
+		expect(displayMsgs.some(m => m.includes("already exists locally"))).toBe(true);
+	});
+
 	test("interactive remote pick with existing local name → auto-recover, no confirm", async () => {
 		const { ui } = makeUi({ selects: ["origin/x"], inputs: [""] });
 		const { deps, calls, getExecved, displayMsgs } = makeDeps(
@@ -356,50 +376,12 @@ git commit -m "feat: sort picker options — current, its remotes, primary, its 
 		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
 		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
 		expect(adds.length).toBe(2);
-		expect(adds[0].args).toEqual(["worktree", "add", "-b", "x", sibling("x"), "origin/x"]);
 		expect(adds[1].args).toEqual(["worktree", "add", sibling("x"), "x"]);
 		expect(getExecved()?.argv).toContain(sibling("x"));
 		expect(displayMsgs.some(m => m.includes("already exists locally"))).toBe(true);
 	});
 
-	test("--new with existing branch name + accept → check out existing branch", async () => {
-		const { ui } = makeUi({ confirms: [true] });
-		const { deps, calls, getExecved } = makeDeps(
-			{
-				current: "main",
-				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
-				addFailStderr: "fatal: a branch named 'feat' already exists",
-			},
-			ui,
-			new Set([SESSION_FILE]),
-		);
-		await runWorktreeCommand("--new feat", makeCtx(SESSION_FILE), deps);
-		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
-		expect(adds.length).toBe(2);
-		expect(adds[0].args).toEqual(["worktree", "add", "-b", "feat", sibling("feat")]);
-		expect(adds[1].args).toEqual(["worktree", "add", sibling("feat"), "feat"]);
-		expect(getExecved()?.argv).toContain(sibling("feat"));
-	});
-
-	test("--new with existing branch name + decline → error shown, no retry", async () => {
-		const { ui } = makeUi({ confirms: [false] });
-		const { deps, calls, getExecved, displayMsgs } = makeDeps(
-			{
-				current: "main",
-				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
-				addFailStderr: "fatal: a branch named 'feat' already exists",
-			},
-			ui,
-			new Set([SESSION_FILE]),
-		);
-		await runWorktreeCommand("--new feat", makeCtx(SESSION_FILE), deps);
-		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
-		expect(adds.length).toBe(1);
-		expect(getExecved()).toBeNull();
-		expect(displayMsgs.some(m => m.includes("a branch named 'feat' already exists"))).toBe(true);
-	});
-
-	test("unrelated add failure → no recovery prompt", async () => {
+	test("unrelated add failure → no recovery, error shown", async () => {
 		const { ui } = makeUi({});
 		const { deps, calls, getExecved, displayMsgs } = makeDeps(
 			{
@@ -418,50 +400,20 @@ git commit -m "feat: sort picker options — current, its remotes, primary, its 
 	});
 ```
 
-Note: the empty confirm script in the first and last tests is the assertion — if a prompt were shown, the script's `confirm` would return `false` and abort before the second add / execve.
-
 - [ ] **Step 3: Run to verify the new tests fail**
 
 Run: `bun test test/command.test.ts`
-Expected: the four new tests FAIL (recovery not implemented); pre-existing tests still PASS.
+Expected: the three new tests FAIL (recovery not implemented); pre-existing tests still PASS.
 
 - [ ] **Step 4: Implement** — in `src/command.ts`:
    1. Add `branchExistsInAddError` to the import from `./git`.
-   2. Change the `Mode` type:
-
-```ts
-type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; baseRef?: string; auto?: boolean };
-```
-
-   3. In the interactive flow, the remote-pick branch becomes:
-
-```ts
-		} else {
-			// Remote → local tracking branch (auto-defaulted name, no prompt).
-			mode = { kind: "new", name: localNameForRemote(choice), baseRef: choice, auto: true };
-			branch = mode.name;
-		}
-```
-
-   4. Replace the `addWorktree` try/catch (keep the `try` body identical):
+   2. Replace the `addWorktree` try/catch (keep the `try` body identical):
 
 ```ts
 	} catch (e) {
 		const msg = (e as Error).message;
 		if (mode.kind === "new" && branchExistsInAddError(msg) === mode.name) {
-			if (!mode.auto) {
-				if (
-					!(await deps.ui.confirm(
-						"Branch exists",
-						`Branch ${mode.name} already exists — check it out in the new worktree instead?`,
-					))
-				) {
-					deps.display(`${deps.symbols("status.warning")} ${msg}`);
-					return;
-				}
-			} else {
-				deps.display(`${deps.symbols("status.warning")} Branch ${mode.name} already exists locally — checking it out`);
-			}
+			deps.display(`${deps.symbols("status.warning")} Branch ${mode.name} already exists locally — checking it out`);
 			try {
 				await addWorktree(mainRoot, deps.run, { path: at, branch: mode.name });
 			} catch (e2) {
@@ -476,16 +428,18 @@ type Mode = { kind: "checkout"; branch: string } | { kind: "new"; name: string; 
 	}
 ```
 
+   No other changes to `src/command.ts` in this task — `Mode`, the D3 fast path, and the interactive branches stay as-is.
+
 - [ ] **Step 5: Run the full command test file**
 
 Run: `bun test test/command.test.ts`
-Expected: PASS — all pre-existing tests AND the four new ones.
+Expected: PASS — all pre-existing tests AND the three new ones.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/command.ts test/command.test.ts
-git commit -m "feat: recover from branch-exists add failure — prompt or auto checkout"
+git commit -m "feat: auto-checkout existing branch when worktree add -b collides"
 ```
 
 ---
@@ -670,22 +624,20 @@ with:
    3. In the "Checks" section, after the "Path collision" bullet, add:
 
 ```md
-- **Branch name collision** — if a new branch name already exists, you're asked
-  to check out the existing branch in the new worktree instead. When the name
-  was auto-derived from a remote branch (empty input), the checkout happens
-  without prompting.
+- **Branch name collision** — if a new branch name already exists locally, the
+  existing branch is checked out in the new worktree automatically (no
+  prompt).
 ```
 
 - [ ] **Step 2: Update `CONTEXT.md`** — in the "Resolved decisions (baked into the design)" list, after the D10 bullet, add:
 
 ```md
-- **D11 — Branch-name collision recovers by checking out the existing branch.**
-  If `worktree add -b <name>` fails because the branch already exists, the
-  plugin retries as a plain checkout of that branch at the same path.
-  Explicitly typed names prompt first; auto-defaulted names (remote pick +
-  empty input) recover without prompting. Safe because git enforces
-  single-checkout and the existing-worktree fast path already routes
-  checked-out branches.
+- **D11 — Worktree creation is automatic.** If no worktree checks out the
+  requested branch, the plugin creates one — plain checkout when the branch
+  exists locally, `-b` from the base otherwise — with no confirmation. A `-b`
+  branch-name collision is retried as a plain checkout of the existing branch
+  at the same path, without prompting. The only prompt for an existing branch
+  is the D3 switch into its worktree.
 
 - **D12 — Picker sorts current and primary branches first.** The interactive
   branch picker order: current branch, remote versions of the current branch,
@@ -724,7 +676,11 @@ tmp=$(mktemp -d) && cd "$tmp" && git init -q -b main r && cd r \
   && echo "repo ready; in a real omp session run: /worktree --new feat"
 ```
 
-Expected: the plugin prompts *"Branch feat already exists — check it out in the new worktree instead?"*; accepting creates the worktree and switches into it; declining shows `fatal: a branch named 'feat' already exists`.
+Expected: the plugin creates the worktree automatically — it checks out the
+existing `feat` branch at the default path and switches into it, showing
+"Branch feat already exists locally — checking it out" — no prompt. Re-running
+`/worktree feat` afterwards prompts "Switch into existing worktree at
+`<path>`?" because a worktree now exists for it.
 
 - [ ] **Step 3: Commit any stragglers**
 
