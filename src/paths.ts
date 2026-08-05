@@ -61,7 +61,7 @@ export function sortBranchesForPicker(opts: {
 		remotesOf(opts.current).forEach(add);
 	}
 	if (opts.primary && opts.primary !== opts.current) {
-		add(opts.primary);
+		if (opts.local.includes(opts.primary)) add(opts.primary);
 		remotesOf(opts.primary).forEach(add);
 	}
 	opts.local.filter(b => !seen.has(b)).forEach(add);

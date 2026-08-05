@@ -158,4 +158,14 @@ describe("sortBranchesForPicker", () => {
 			}),
 		).toEqual(["a", "origin/x", "b"]);
 	});
+	test("primary existing only as a remote ref → only its remote version is emitted", () => {
+		expect(
+			sortBranchesForPicker({
+				local: ["feature"],
+				remote: ["origin/trunk"],
+				current: "feature",
+				primary: "trunk",
+			}),
+		).toEqual(["feature", "origin/trunk"]);
+	});
 });
