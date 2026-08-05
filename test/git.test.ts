@@ -147,6 +147,11 @@ describe("branchExistsInAddError", () => {
 	test("handles slashed branch names", () => {
 		expect(branchExistsInAddError("fatal: a branch named 'feature/foo' already exists")).toBe("feature/foo");
 	});
+	test("matches fatal as the last line of multi-line stderr (real git progress line precedes it)", () => {
+		expect(
+			branchExistsInAddError("Preparing worktree (new branch 'feat')\nfatal: a branch named 'feat' already exists"),
+		).toBe("feat");
+	});
 	test("returns undefined for other errors", () => {
 		expect(branchExistsInAddError("fatal: 'feat' is already used by worktree at '/x'")).toBeUndefined();
 		expect(branchExistsInAddError("add failed")).toBeUndefined();

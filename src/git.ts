@@ -128,9 +128,13 @@ export async function addWorktree(cwd: string, run: GitExec, opts: AddWorktreeOp
 /**
  * If the error message is git's `-b` branch-name-collision fatal, return the
  * colliding branch name; otherwise undefined.
+ *
+ * git's die() is always the last line of stderr, so the fatal is only anchored
+ * to the end — progress lines (e.g. `Preparing worktree (new branch 'feat')`)
+ * may precede it.
  */
 export function branchExistsInAddError(message: string): string | undefined {
-	const m = message.match(/^fatal: a branch named '(.+)' already exists$/);
+	const m = message.match(/fatal: a branch named '(.+)' already exists$/);
 	return m ? m[1] : undefined;
 }
 
