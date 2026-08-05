@@ -2,6 +2,7 @@ import * as path from "node:path";
 import type { GitExec } from "./git";
 import {
 	addWorktree,
+	branchExistsInAddError,
 	currentBranch,
 	formatWorktreeList,
 	listBranches,
@@ -177,7 +178,19 @@ export async function runWorktreeCommand(
 			await addWorktree(mainRoot, deps.run, { path: at, branch: mode.branch });
 		}
 	} catch (e) {
-		deps.display(`${deps.symbols("status.warning")} ${(e as Error).message}`);
+		const msg = (e as Error).message;
+		if (mode.kind === "new" && branchExistsInAddError(msg) === mode.name) {
+			deps.display(`${deps.symbols("status.warning")} Branch ${mode.name} already exists locally — checking it out`);
+			try {
+				await addWorktree(mainRoot, deps.run, { path: at, branch: mode.name });
+			} catch (e2) {
+				deps.display(`${deps.symbols("status.warning")} ${(e2 as Error).message}`);
+				return;
+			}
+			relaunchInto(at);
+			return;
+		}
+		deps.display(`${deps.symbols("status.warning")} ${msg}`);
 		return;
 	}
 	relaunchInto(at);

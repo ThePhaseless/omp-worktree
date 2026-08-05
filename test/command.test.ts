@@ -20,6 +20,7 @@ interface RunOpts {
 	worktrees?: WorktreeInfo[];
 	notRepo?: boolean;
 	addFails?: boolean;
+	addFailStderr?: string;
 }
 
 function porcelainOutput(wts: WorktreeInfo[]): string {
@@ -35,6 +36,7 @@ function porcelainOutput(wts: WorktreeInfo[]): string {
 
 function makeRun(opts: RunOpts) {
 	const calls: { cmd: string; args: string[]; cwd: string }[] = [];
+	let addCount = 0;
 	const run: GitExec = async (cmd, args, cwd) => {
 		calls.push({ cmd, args: [...args], cwd });
 		if (cmd !== "git") return { stdout: "", stderr: "", code: 1 };
@@ -53,8 +55,13 @@ function makeRun(opts: RunOpts) {
 		}
 		if (sub === "worktree") {
 			if (args[1] === "list") return { stdout: porcelainOutput(opts.worktrees ?? []), stderr: "", code: 0 };
-			if (args[1] === "add")
+			if (args[1] === "add") {
+				if (opts.addFailStderr !== undefined) {
+					if (addCount++ === 0) return { stdout: "", stderr: opts.addFailStderr, code: 1 };
+					return { stdout: "", stderr: "", code: 0 };
+				}
 				return opts.addFails ? { stdout: "", stderr: "add failed", code: 1 } : { stdout: "", stderr: "", code: 0 };
+			}
 			if (args[1] === "remove") return { stdout: "", stderr: "", code: 0 };
 		}
 		if (sub === "status") return { stdout: opts.porcelain ?? "", stderr: "", code: 0 };
@@ -289,6 +296,65 @@ describe("runWorktreeCommand — create/switch", () => {
 		const argv = getExecved()?.argv;
 		expect(argv).toBeDefined();
 		expect(argv).not.toContain("--fork");
+	});
+
+	test("--new with existing branch name → auto-recover checkout, no prompt", async () => {
+		const { ui } = makeUi({});
+		const { deps, calls, getExecved, displayMsgs } = makeDeps(
+			{
+				current: "main",
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+				addFailStderr: "fatal: a branch named 'feat' already exists",
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("--new feat", makeCtx(SESSION_FILE), deps);
+		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
+		expect(adds.length).toBe(2);
+		expect(adds[0].args).toEqual(["worktree", "add", "-b", "feat", sibling("feat")]);
+		expect(adds[1].args).toEqual(["worktree", "add", sibling("feat"), "feat"]);
+		expect(getExecved()?.argv).toContain(sibling("feat"));
+		expect(displayMsgs.some(m => m.includes("already exists locally"))).toBe(true);
+	});
+
+	test("interactive remote pick with existing local name → auto-recover, no confirm", async () => {
+		const { ui } = makeUi({ selects: ["origin/x"], inputs: [""] });
+		const { deps, calls, getExecved, displayMsgs } = makeDeps(
+			{
+				current: "main",
+				local: ["main", "x"],
+				remote: ["origin/x"],
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+				addFailStderr: "fatal: a branch named 'x' already exists",
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("", makeCtx(SESSION_FILE), deps);
+		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
+		expect(adds.length).toBe(2);
+		expect(adds[1].args).toEqual(["worktree", "add", sibling("x"), "x"]);
+		expect(getExecved()?.argv).toContain(sibling("x"));
+		expect(displayMsgs.some(m => m.includes("already exists locally"))).toBe(true);
+	});
+
+	test("unrelated add failure → no recovery, error shown", async () => {
+		const { ui } = makeUi({});
+		const { deps, calls, getExecved, displayMsgs } = makeDeps(
+			{
+				current: "main",
+				worktrees: [{ path: "/repo", branch: "refs/heads/main" }],
+				addFailStderr: "fatal: unable to access 'https://example.invalid'",
+			},
+			ui,
+			new Set([SESSION_FILE]),
+		);
+		await runWorktreeCommand("--new feat", makeCtx(SESSION_FILE), deps);
+		const adds = calls.filter(c => c.args[0] === "worktree" && c.args[1] === "add");
+		expect(adds.length).toBe(1);
+		expect(getExecved()).toBeNull();
+		expect(displayMsgs.some(m => m.includes("unable to access"))).toBe(true);
 	});
 });
 
