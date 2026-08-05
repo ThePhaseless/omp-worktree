@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import * as path from "node:path";
-import { shortRef } from "./paths";
+import { localNameForRemote, shortRef } from "./paths";
 
 /** Shape of `pi.exec`'s `ExecResult` minus `killed`. */
 export type GitExec = (cmd: string, args: string[], cwd: string) => Promise<{
@@ -42,6 +42,28 @@ export async function listBranches(cwd: string, run: GitExec): Promise<{ local: 
 		? remoteR.stdout.split("\n").map(s => s.trim()).filter(s => s && !s.endsWith("/HEAD"))
 		: [];
 	return { local, remote };
+}
+
+/**
+ * The repo's primary (default) branch: `git symbolic-ref
+ * refs/remotes/origin/HEAD` short name when it exists in the local/remote
+ * lists, else `main`, else `master`; undefined when none match.
+ */
+export async function primaryBranch(
+	cwd: string,
+	run: GitExec,
+	local: string[],
+	remote: string[],
+): Promise<string | undefined> {
+	const r = await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], cwd);
+	if (r.code === 0) {
+		const name = r.stdout.trim().replace(/^refs\/remotes\/[^/]+\//, "");
+		if (local.includes(name) || remote.some(x => localNameForRemote(x) === name)) return name;
+	}
+	for (const cand of ["main", "master"]) {
+		if (local.includes(cand) || remote.some(x => localNameForRemote(x) === cand)) return cand;
+	}
+	return undefined;
 }
 
 export interface WorktreeInfo {

@@ -10,6 +10,7 @@ import {
 	formatWorktreeList,
 	listBranches,
 	listWorktrees,
+	primaryBranch,
 	removeWorktree,
 	resolveMainRepoRoot,
 	statusPorcelain,
@@ -150,5 +151,42 @@ describe("branchExistsInAddError", () => {
 		expect(branchExistsInAddError("fatal: 'feat' is already used by worktree at '/x'")).toBeUndefined();
 		expect(branchExistsInAddError("add failed")).toBeUndefined();
 		expect(branchExistsInAddError("fatal: a branch named 'feat' already exists\nmore")).toBeUndefined();
+	});
+});
+
+describe("primaryBranch", () => {
+	let repo: string;
+	beforeEach(async () => {
+		repo = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wt-primary-"));
+		await run("git", ["init", "-q", "-b", "main"], repo);
+		await run("git", ["config", "user.email", "t@t"], repo);
+		await run("git", ["config", "user.name", "t"], repo);
+		await fs.promises.writeFile(path.join(repo, "f"), "a");
+		await run("git", ["add", "f"], repo);
+		await run("git", ["commit", "-qm", "init"], repo);
+	});
+	afterEach(async () => {
+		await fs.promises.rm(repo, { recursive: true, force: true });
+	});
+
+	test("resolves origin/HEAD target when present in lists", async () => {
+		await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], repo);
+		const { local, remote } = await listBranches(repo, run);
+		expect(await primaryBranch(repo, run, local, remote)).toBe("main");
+	});
+	test("origin/HEAD target absent from lists → falls back to main", async () => {
+		await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"], repo);
+		const { local, remote } = await listBranches(repo, run);
+		expect(await primaryBranch(repo, run, local, remote)).toBe("main");
+	});
+	test("no origin/HEAD and no main → master", async () => {
+		await run("git", ["branch", "-m", "main", "master"], repo);
+		const { local, remote } = await listBranches(repo, run);
+		expect(await primaryBranch(repo, run, local, remote)).toBe("master");
+	});
+	test("nothing matches → undefined", async () => {
+		await run("git", ["branch", "-m", "main", "other"], repo);
+		const { local, remote } = await listBranches(repo, run);
+		expect(await primaryBranch(repo, run, local, remote)).toBeUndefined();
 	});
 });
