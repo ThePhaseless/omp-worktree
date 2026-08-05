@@ -169,6 +169,12 @@ describe("primaryBranch", () => {
 		await fs.promises.rm(repo, { recursive: true, force: true });
 	});
 
+	test("resolves origin/HEAD to a remote ref present only in the remote list", async () => {
+		await run("git", ["update-ref", "refs/remotes/origin/trunk", "HEAD"], repo);
+		await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/trunk"], repo);
+		const { local, remote } = await listBranches(repo, run);
+		expect(await primaryBranch(repo, run, local, remote)).toBe("trunk");
+	});
 	test("resolves origin/HEAD target when present in lists", async () => {
 		await run("git", ["symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"], repo);
 		const { local, remote } = await listBranches(repo, run);
